@@ -1,0 +1,228 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+// Mojang 从 1.18 版本开始向最终用户分发 Java 17，因此你的模组应以 Java 17 为目标。
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+println "Java: ${System.getProperty 'java.version'}, JVM: ${System.getProperty 'java.vm.version'} (${System.getProperty 'java.vendor'}), Arch: ${System.getProperty 'os.arch'}"
+minecraft {
+    // 映射表（mappings）可以随时更改，且必须遵循以下格式。
+    // 渠道:      版本:
+    // official   MCVersion             来自 Mojang 映射文件的官方字段/方法名称
+    // parchment  YYYY.MM.DD-MCVersion  基于官方映射之上的、由社区贡献的参数名称和 Javadoc 层
+    //
+    // 在使用 'official' 或 'parchment' 映射时，你必须了解 Mojang 的许可证条款。
+    // 更多信息请参见：https://github.com/MinecraftForge/MCPConfig/blob/master/Mojang.md
+    //
+    // Parchment 是由 ParchmentMC 维护的非官方项目，独立于 MinecraftForge。
+    // 使用他们的映射需要额外配置：https://parchmentmc.org/docs/getting-started
+    //
+    // 使用非默认映射的风险由你自己承担。它们可能不总是能正常工作。
+    // 在更改映射后，只需重新运行你的 setup 任务即可更新工作区。
+    mappings channel: mapping_channel, version: mapping_version
+
+    // 当此属性设为 true 时，所有 Eclipse/IntelliJ IDEA 运行配置在启动游戏前，
+    // 会先运行对应运行配置的 "prepareX" 任务。
+    // 大多数情况下无需启用此选项。
+    // enableEclipsePrepareRuns = true
+    // enableIdeaPrepareRuns = true
+
+    // 此属性允许配置 Gradle 的 ProcessResources 任务，使其在启动游戏前对 IDE 输出位置运行。
+    // 为了使此模板正常工作，此属性必须设置为 true。
+    // 参见：https://docs.gradle.org/current/dsl/org.gradle.language.jvm.tasks.ProcessResources.html
+    copyIdeResources = true
+
+    // 当此属性设为 true 时，会将所有已声明的运行配置的文件夹名称添加到生成的 IDE 运行配置中。
+    // 文件夹名称可以通过运行配置上的 "folderName" 属性来设置。
+    // 默认情况下，运行配置的文件夹名称是包含它的 Gradle 项目的名称。
+    // generateRunFolders = true
+
+    // 此属性启用在开发中使用访问转换器（Access Transformers）。
+    // 它们将被应用于 Minecraft 构件（artifact）。
+    // 访问转换器文件可以位于项目中的任何位置。
+    // 但是，为了能被 Forge 加载，在最终的模组 jar 中它必须位于 "META-INF/accesstransformer.cfg"。
+    // 此默认位置是一个最佳实践，可以自动将文件放在最终 jar 中的正确位置。
+    // 更多信息请参见：https://docs.minecraftforge.net/en/latest/advanced/accesstransformers/
+    // accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+
+    // 默认的运行配置。
+    // 这些配置可以根据需要进行调整、移除或复制。
+    runs {
+        // 应用于下面所有的运行配置
+        configureEach {
+            workingDirectory project.file('run')
+
+            // 为 userdev 环境推荐的日志记录数据
+            // 标记（markers）可以根据需要添加/删除，用逗号分隔。
+            // "SCAN": 用于模组扫描。
+            // "REGISTRIES": 用于触发注册表事件。
+            // "REGISTRYDUMP": 用于获取所有注册表的内容。
+            property 'forge.logging.markers', 'REGISTRIES'
+
+            // 为控制台推荐的日志记录级别
+            // 你可以在此处设置不同的级别。
+            // 请阅读：https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
+            property 'forge.logging.console.level', 'debug'
+
+            // 依赖模组（卓越前线等）的生产 jar 里，mixin 的 refmap 记录的是 SRG 名（m_xxxxx_）。
+            // 开发环境用的是 official 名，必须让 Mixin 用 FG 生成的 SRG->official 映射重映射 refmap，
+            // 否则会在启动时报 "could not find any targets matching '...m_60742_...'" 并崩溃。
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${project.buildDir}/createSrgToMcp/output.srg"
+
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        client {
+            // 以逗号分隔的命名空间列表，用于从中加载游戏测试（gametests）。留空表示所有命名空间。
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+
+        server {
+            property 'forge.enabledGameTestNamespaces', mod_id
+            // 无头自测：设置环境变量 SBW_SELFTEST=true 后 runServer，会跑一次字段注入自测并自动关服
+            property 'sbwcontrol.selftest', System.getenv('SBW_SELFTEST') ?: 'false'
+            args '--nogui'
+        }
+
+        // 此运行配置会启动 GameTestServer 并运行所有已注册的游戏测试，然后退出。
+        // 默认情况下，如果未提供任何游戏测试，服务器将会崩溃。
+        // 游戏测试系统默认也为其他运行配置在 /test 命令下启用。
+        gameTestServer {
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+
+        data {
+            // 覆盖上面 configureEach 中设置的 workingDirectory 的示例
+            workingDirectory project.file('run-data')
+
+            // 指定数据生成的 modid，结果资源输出到哪里，以及在哪里查找现有资源。
+            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+        }
+    }
+}
+
+// 包含由数据生成器生成的资源。
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories {
+    // 将依赖项的仓库放在此处
+    // ForgeGradle 会自动为你添加 Forge Maven 仓库和 Maven Central 仓库
+
+    // 如果你在 ./libs 目录下有模组 jar 依赖项，你可以像这样将它们声明为一个仓库。
+    // 参见：https://docs.gradle.org/current/userguide/declaring_repositories.html#sub:flat_dir_resolver
+    // 附属模组依赖：卓越前线与其前置 jar 放在 ./libs（flatDir 按「文件名 = name-version.jar」解析，不读 POM）
+    flatDir {
+        dir 'libs'
+    }
+}
+
+dependencies {
+    // 指定要使用的 Minecraft 版本。
+    // 只要任何构件（artifact）具有 "userdev" classifier 构件并且是兼容的 patcher 构件，就可以提供。
+    // "userdev" classifier 将由 ForgeGradle 请求并设置。
+    // 如果 group id 是 "net.minecraft" 且 artifact id 是 ["client", "server", "joined"] 之一，
+    // 则会进行特殊处理，以便在不使用外部仓库的情况下设置原版依赖项。
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    // ===== 附属模组依赖：卓越前线 Superb Warfare（GPL-3.0，仅供开发期链接，不打包进本模组）=====
+    // 文件：./libs/superbwarfare-0.8.9.2-all.jar（0.8.9.2-mc1.20.1，2026-09-30 官方最新）
+    // -all 是官方完整包：jarjar 内嵌 geckolib / simplebedrockmodel / cloth-config 等依赖
+    // fg.deobf：把生产 jar 的 SRG 名重映射到本工程的 official 映射，Java 源码里才能直接引用它的类
+    implementation fg.deobf("libs:superbwarfare:0.8.9.2-all")
+
+    // 卓越前线 mods.toml 声明 modLoader = "kotlinforforge"、loaderVersion = "[4.11.0,)"
+    // 缺 Kotlin for Forge 会在加载阶段直接报缺少前置；这里用 4.12.0（1.20.1 最新）
+    implementation fg.deobf("libs:kotlinforforge:4.12.0-all")
+
+    // 示例：带有 JEI 的模组依赖项 - 使用 fg.deobf() 可确保依赖项被重新映射到你的开发映射表
+    // JEI API 被声明为 compileOnly（仅编译时使用），而完整的 JEI 构件在运行时使用
+    // compileOnly fg.deobf("mezz.jei:jei-${mc_version}-common-api:${jei_version}")
+    // compileOnly fg.deobf("mezz.jei:jei-${mc_version}-forge-api:${jei_version}")
+    // runtimeOnly fg.deobf("mezz.jei:jei-${mc_version}-forge:${jei_version}")
+
+    // 示例：使用来自 ./libs 目录的模组 jar 依赖项，配合 flat dir 仓库
+    // 这会映射到 ./libs/coolmod-${mc_version}-${coolmod_version}.jar
+    // 在搜索时 group id 会被忽略——在此例中，它是 "blank"
+    // implementation fg.deobf("blank:coolmod-${mc_version}:${coolmod_version}")
+
+    // 更多信息：
+    // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
+    // http://www.gradle.org/docs/current/userguide/dependency_management.html
+}
+
+// 此代码块会在指定的资源目标中展开所有已声明的替换属性。
+// 缺少任何属性都将导致错误。属性会使用 ${} Groovy 表示法进行展开。
+// 当 "copyIdeResources" 启用时，此任务也会在 IDE 环境中启动游戏前运行。
+// 参见：https://docs.gradle.org/current/dsl/org.gradle.language.jvm.tasks.ProcessResources.html
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version: minecraft_version, minecraft_version_range: minecraft_version_range,
+            forge_version: forge_version, forge_version_range: forge_version_range,
+            loader_version_range: loader_version_range,
+            mod_id: mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
+            mod_authors: mod_authors, mod_description: mod_description,
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+// 示例：如何将属性放入 MANIFEST.MF 文件中以便在运行时读取。
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                'Specification-Title'     : mod_id,
+                'Specification-Vendor'    : mod_authors,
+                'Specification-Version'   : '1', // 我们自身的版本为 1
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.jar.archiveVersion,
+                'Implementation-Vendor'   : mod_authors,
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+
+    // 这是重新混淆（reobfuscate）你的 jar 文件的首选方法
+    finalizedBy 'reobfJar'
+}
+
+// 但是，如果你处于多项目构建中，开发时需要未混淆的 jar 文件，
+// 那么你可以通过以下方式将混淆延迟到发布时再进行：
+// tasks.named('publish').configure {
+//     dependsOn 'reobfJar'
+// }
+
+// 示例：配置使用 maven-publish 插件进行发布
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            artifact jar
+        }
+    }
+    repositories {
+        maven {
+            url "file://${project.projectDir}/mcmodsrepo"
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8' // 为 Java 编译使用 UTF-8 字符集
+}

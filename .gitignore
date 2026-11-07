@@ -1,0 +1,11 @@
+build/
+.gradle/
+.idea/
+run/
+run-data/
+libs/*.jar
+!libs/README.md
+*.log
+crash-reports/
+sbwcontrol-telemetry/
+.DS_Store

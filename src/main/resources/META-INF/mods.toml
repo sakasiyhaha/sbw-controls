@@ -1,0 +1,82 @@
+# 这是一个示例 mods.toml 文件。它包含了与加载模组相关的数据。
+# 其中有几个必填字段（#mandatory），以及更多可选字段（#optional）。
+# 整体格式是标准的 TOML 格式，v0.5.0。
+# 请注意，此文件中包含几个 TOML 列表。
+# 有关 toml 格式的更多信息，请访问：https://github.com/toml-lang/toml
+# 要加载的模组加载器类型 - 对于常规的 FML @Mod 模组，应为 javafml
+modLoader="javafml" #mandatory
+# 要与上述模组加载器匹配的版本范围 - 对于常规 FML @Mod，它将是 forge 的版本
+loaderVersion="${loader_version_range}" #mandatory 此值通常在每个 Minecraft 大版本中由 Forge 更新。版本列表请见我们的下载页面。
+# 你的模组的许可证。这是必填元数据，能让其他人更容易理解你的分发权利。
+# 在 https://choosealicense.com/ 上查看你的选项。默认的版权立场是保留所有权利 (All Rights Reserved)，因此这里也是默认值。
+license="${mod_license}"
+# 当此模组出现问题时，引导人们访问的 URL
+#issueTrackerURL="https://change.me.to.your.issue.tracker.example.invalid/" #optional
+# 模组列表 - 此处允许多少个模组由各个模组加载器决定
+[[mods]] #mandatory
+# 模组的 modid
+modId="${mod_id}" #mandatory
+# 模组的版本号
+version="${mod_version}" #mandatory
+# 模组的显示名称
+displayName="${mod_name}" #mandatory
+# 用于查询此模组更新的 URL。请参阅 JSON 更新规范 https://docs.minecraftforge.net/en/latest/misc/updatechecker/
+#updateJSONURL="https://change.me.example.invalid/updates.json" #optional
+# 模组的“主页”URL，显示在模组界面中
+#displayURL="https://change.me.to.your.mods.homepage.example.invalid/" #optional
+# 用于显示的 logo 文件名（位于模组 JAR 文件的根目录下）
+logoFile="logo.png" #optional
+# 显示在模组界面中的文本字段
+credits="Superb Warfare by Atsuishio, Roki27, Light_Quanta and contributors; addon by sakasiyhaha." #optional
+# 显示在模组界面中的文本字段
+authors="${mod_authors}" #optional
+# 本附属可在服务端没有安装时自动降级，不显示版本红叉
+displayTest="IGNORE_ALL_VERSION"
+# Display Test 控制你的模组在服务器连接界面中的显示方式
+# MATCH_VERSION 表示如果客户端与服务端的模组版本不同，将显示一个红叉。这是默认行为，如果你的模组同时具有服务端和客户端元素，应选择此项。
+# IGNORE_SERVER_VERSION 表示如果模组在服务端存在而在客户端不存在，不会显示红叉。如果你制作的是纯服务端模组，应使用此项。
+# IGNORE_ALL_VERSION 表示无论模组是在客户端还是服务端存在，都不会显示红叉。这是一个特殊情况，仅当你的模组没有服务端组件时才应使用。
+# NONE 表示不为你的模组设置显示测试。你需要自己实现，请参阅 IExtensionPoint.DisplayTest 以获取更多信息。你可以使用此值定义任何你想要的方案。
+# 重要提示：这并非指示你的模组在哪些环境（客户端或专用服务器）下加载。你的模组应在它所在的任何环境中都能加载（并且也许什么都不做！）。
+#displayTest="MATCH_VERSION" # 如果未指定，MATCH_VERSION 是默认值 (#optional)
+
+# 模组的描述文本（支持多行！）(#mandatory)
+description='''${mod_description}'''
+# 依赖项 - 使用 . 来指示对特定 modid 的依赖。依赖项是可选的。
+[[dependencies.${mod_id}]] #optional
+# 依赖项的 modid
+modId="forge" #mandatory
+# 此依赖项是否必须存在 - 如果为 false，则必须指定下面的 ordering
+mandatory=true #mandatory
+# 依赖项的版本范围
+versionRange="${forge_version_range}" #mandatory
+# 依赖项的排序关系 - 如果依赖项不是必须的，则需要指定 BEFORE 或 AFTER
+# BEFORE - 此模组在依赖项之前加载
+# AFTER - 此模组在依赖项之后加载
+ordering="NONE"
+# 此依赖项应用的环境端 - BOTH（双端）, CLIENT（客户端）, 或 SERVER（服务端）
+side="BOTH"
+# 这里是另一个依赖项
+[[dependencies.${mod_id}]]
+modId="minecraft"
+mandatory=true
+# 此版本范围声明了最低为当前 Minecraft 版本，最高但不包括下一个主要版本
+versionRange="${minecraft_version_range}"
+ordering="NONE"
+side="BOTH"
+
+# 本附属 mod 依赖卓越前线（Superb Warfare）。默认目标版本 0.8.9.2（2026-09-30 官方最新）。
+# 版本范围上限限定在 0.9 之前：核心实现依赖该版本的载具输入字段与相机方法，
+# 若卓越前线大版本更新导致接口变化，本附属需重新适配（版本探测失败会禁用相关功能而不是崩溃）。
+[[dependencies.${mod_id}]]
+modId="superbwarfare"
+mandatory=true
+versionRange="[0.8.9.2,0.9)"
+ordering="AFTER"
+side="BOTH"
+
+# 特性（Features）是你可能需要声明要求的游戏环境特定属性。此示例声明
+# 你的模组需要 OpenGL 版本 3.2 或更高。其他特性将会被添加。它们是区分环境端的，因此像这样声明不会
+# 阻止你的模组在服务端上加载。
+#[features.${mod_id}]
+#openGLVersion="[3.2,)"
