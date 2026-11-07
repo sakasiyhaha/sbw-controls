@@ -74,6 +74,12 @@ public final class ClientConfig {
     public static final ForgeConfigSpec.DoubleValue CAMERA_POSITION_LAG;
     /** 自适应阻尼增益：偏航/翻滚角速度越高，相机滞后时间越短（0=固定阻尼，1~3=机动时更跟手）。 */
     public static final ForgeConfigSpec.DoubleValue CAMERA_ADAPTIVE_GAIN;
+    /** 弹簧阻尼比：1.0=临界阻尼（最稳），<1=更有弹性/轻微回弹，>1=更硬更快停。 */
+    public static final ForgeConfigSpec.DoubleValue CAMERA_SPRING_DAMPING;
+    /** 角速度低通时间（秒）：越大，输入变化越慢，镜头越不容易“瞬间弹一下”。 */
+    public static final ForgeConfigSpec.DoubleValue CAMERA_RATE_SMOOTHING;
+    /** 转向偏移阈值软化：0=旧硬钳制，1=tanh 软饱和（接近阈值时自动减速）。 */
+    public static final ForgeConfigSpec.DoubleValue CAMERA_SOFT_LIMIT;
     /** 横向居中：1 = 把卓越前线载具相机拉回机身中线（消除部分载具的左侧机位偏移），0 = 保持原版。 */
     public static final ForgeConfigSpec.DoubleValue CAMERA_CENTER_LATERAL;
     /** 第三人称动态距离增益（0~2 格/速度单位）。 */
@@ -172,6 +178,12 @@ public final class ClientConfig {
                 .defineInRange("position_lag", 0.08, 0.0, 0.3);
         CAMERA_ADAPTIVE_GAIN = b.comment("Adaptive damping: shrink camera lag when yaw/roll angular speed is high (0 = fixed damping, 1~3 = more agile)")
                 .defineInRange("adaptive_gain", 1.5, 0.0, 5.0);
+        CAMERA_SPRING_DAMPING = b.comment("Spring damping ratio: 1.0 = critically damped, below 1 = slightly bouncy, above 1 = stiffer")
+                .defineInRange("spring_damping", 0.90, 0.5, 1.5);
+        CAMERA_RATE_SMOOTHING = b.comment("Angular-rate low-pass time in seconds; higher = softer onset, less instant camera kick (0~0.3)")
+                .defineInRange("rate_smoothing", 0.10, 0.0, 0.3);
+        CAMERA_SOFT_LIMIT = b.comment("Soft turn-lag limit: 0 = old hard clamp, 1 = smooth tanh saturation that decelerates near the limit")
+                .defineInRange("soft_limit", 1.0, 0.0, 1.0);
         CAMERA_DISTANCE_GAIN = b.comment("Extra third-person camera distance per speed unit (0~2)")
                 .defineInRange("distance_gain", 0.5, 0.0, 2.0);
         CAMERA_ADS_SCALE = b.comment("Scale of camera dynamics while aiming/zooming (0~1)")

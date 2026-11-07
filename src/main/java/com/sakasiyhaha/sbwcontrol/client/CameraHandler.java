@@ -138,8 +138,10 @@ public final class CameraHandler {
         // 后者在帧率波动或网络同步更新时会产生尖峰，导致相机（和飞机观感）抖动。
         double rawYawRate = Mth.wrapDegrees(vehicle.getYRot() - vehicle.yRotO) * 20.0D;
         double rawPitchRate = (vehicle.getXRot() - vehicle.xRotO) * 20.0D;
-        smoothedYawRate += (rawYawRate - smoothedYawRate) * alpha(dt, 0.10D);
-        smoothedPitchRate += (rawPitchRate - smoothedPitchRate) * alpha(dt, 0.10D);
+        double rateSmoothing = fp ? Math.min(0.10D, ClientConfig.CAMERA_RATE_SMOOTHING.get())
+                : ClientConfig.CAMERA_RATE_SMOOTHING.get();
+        smoothedYawRate += (rawYawRate - smoothedYawRate) * alpha(dt, rateSmoothing);
+        smoothedPitchRate += (rawPitchRate - smoothedPitchRate) * alpha(dt, rateSmoothing);
         // 翻滚角速度（度/秒）：用于把“偏航/翻滚速度”也纳入相机阻尼的参考。
         double vehicleRoll = vehicle.getRoll(partial);
         if (Double.isNaN(prevVehicleRoll)) {
@@ -147,7 +149,7 @@ public final class CameraHandler {
         }
         double rawRollRate = Mth.wrapDegrees(vehicleRoll - prevVehicleRoll) / dt;
         prevVehicleRoll = vehicleRoll;
-        smoothedRollRate += (rawRollRate - smoothedRollRate) * alpha(dt, 0.08D);
+        smoothedRollRate += (rawRollRate - smoothedRollRate) * alpha(dt, rateSmoothing);
 
         // 自适应阻尼：机动越剧烈（偏航/翻滚角速度越大），相机滞后时间越短，跟随越跟手。
         double adaptiveGain = fp ? ClientConfig.CAMERA_FP_ADAPTIVE_GAIN.get()
@@ -164,15 +166,17 @@ public final class CameraHandler {
                 : ClientConfig.CAMERA_LEAD.get() * preset.leadScale;
         double turnSign = ClientConfig.CAMERA_TURN_LAG_INVERT.get() ? 1.0D : -1.0D;
         double turnSignPitch = ClientConfig.CAMERA_TURN_LAG_INVERT_PITCH.get() ? 1.0D : -1.0D;
-        double targetYaw = Mth.clamp(turnSign * smoothedYawRate * lagSeconds, -12.0D, 12.0D);
-        double targetPitch = Mth.clamp(turnSignPitch * smoothedPitchRate * lagSeconds, -8.0D, 8.0D);
+        double softness = fp ? 0.0D : ClientConfig.CAMERA_SOFT_LIMIT.get();
+        double targetYaw = softLimit(turnSign * smoothedYawRate * lagSeconds, 12.0D, softness);
+        double targetPitch = softLimit(turnSignPitch * smoothedPitchRate * lagSeconds, 8.0D, softness);
         // 右键瞄准（第一人称放大）不再按第三人称 ADS 比例缩放；第一人称参数已独立。
         double adsScale = fp ? 1.0D
                 : (ClientEventHandler.zoomVehicle ? ClientConfig.CAMERA_ADS_SCALE.get() : 1.0D);
         targetYaw *= adsScale;
         targetPitch *= adsScale;
-        offsetYaw = smoothDamp(offsetYaw, targetYaw, OFFSET_YAW_VEL, lagYaw, 180.0D, dt);
-        offsetPitch = smoothDamp(offsetPitch, targetPitch, OFFSET_PITCH_VEL, lagPitch, 120.0D, dt);
+        double springDamping = fp ? 1.0D : ClientConfig.CAMERA_SPRING_DAMPING.get();
+        offsetYaw = springStep(offsetYaw, targetYaw, OFFSET_YAW_VEL, lagYaw, springDamping, 180.0D, dt);
+        offsetPitch = springStep(offsetPitch, targetPitch, OFFSET_PITCH_VEL, lagPitch, springDamping, 120.0D, dt);
         // 以 SW/原版刚刚设置好的角度为基准叠加偏移，而不是重新覆盖成载具姿态：
         // 这样右键瞄准（SW 用炮口/视向量算相机）时不会被我们打断。
         double baseYaw = event.getYaw();
@@ -199,7 +203,7 @@ public final class CameraHandler {
                 ROLL_VEL[0] = 0.0D;
             } else {
                 double rollLag = ClientConfig.CAMERA_LAG_ROLL.get() / agility;
-                smoothedRoll = smoothDamp(smoothedRoll, targetRoll, ROLL_VEL, rollLag, 1080.0D, dt);
+                smoothedRoll = springStep(smoothedRoll, targetRoll, ROLL_VEL, rollLag, springDamping, 1080.0D, dt);
             }
             // 事件里的 roll 是绝对角度，等价角用 wrap 收回到 [-180,180]，避免叠加出 360°。
             double cameraRollOffset = Mth.wrapDegrees(smoothedRoll - stockRoll);
@@ -288,9 +292,9 @@ public final class CameraHandler {
                 } else {
                     double springTime = positionLag / agility;
                     smoothedRel = new Vec3(
-                            smoothDamp(smoothedRel.x, targetRel.x, REL_X_VEL, springTime, 12.0D, dt),
-                            smoothDamp(smoothedRel.y, targetRel.y, REL_Y_VEL, springTime, 8.0D, dt),
-                            smoothDamp(smoothedRel.z, targetRel.z, REL_Z_VEL, springTime, 12.0D, dt));
+                            springStep(smoothedRel.x, targetRel.x, REL_X_VEL, springTime, springDamping, 12.0D, dt),
+                            springStep(smoothedRel.y, targetRel.y, REL_Y_VEL, springTime, springDamping, 8.0D, dt),
+                            springStep(smoothedRel.z, targetRel.z, REL_Z_VEL, springTime, springDamping, 12.0D, dt));
                 }
                 Vec3 result = center.add(smoothedRel);
                 desiredX = result.x;
@@ -356,26 +360,51 @@ public final class CameraHandler {
     }
 
     /**
-     * 临界阻尼弹簧（Unity SmoothDamp 公式）。与线性指数插值不同：
-     * 速度跨帧保留，会先加速再减速，对目标变化产生非线性平滑，而不是每帧直接按 alpha 跳。
-     *
-     * @param velocity 长度 1 的可变速度数组（跨帧保留）
+     * 软阈值：接近 ±limit 时自动减速，而不是撞到硬钳制后突然停住。
+     * softness=0 保持原来的硬 clamp；softness=1 使用 tanh 饱和。
      */
-    private static double smoothDamp(double current, double target, double[] velocity,
-                                     double smoothTime, double maxSpeed, double dt) {
+    private static double softLimit(double value, double limit, double softness) {
+        double hard = Mth.clamp(value, -limit, limit);
+        if (softness <= 1.0E-4D) {
+            return hard;
+        }
+        double soft = limit * Math.tanh(value / limit);
+        return hard + (soft - hard) * Mth.clamp(softness, 0.0D, 1.0D);
+    }
+
+    /**
+     * 物理弹簧积分：固定子步长（120Hz）积分质量-弹簧-阻尼系统，避免低帧率时“一帧直接弹到目标”。
+     *
+     * <p>smoothTime 仍沿用原来的相机滞后参数语义：自然频率 omega = 2 / smoothTime。
+     * dampingRatio = 1 为临界阻尼；略小于 1 会有轻微回弹，减少“死板”感。
+     */
+    private static double springStep(double current, double target, double[] velocity,
+                                     double smoothTime, double dampingRatio, double maxSpeed, double dt) {
         if (smoothTime <= 1.0E-4D) {
             velocity[0] = 0.0D;
             return target;
         }
+        // 极小 smoothTime 下显式积分不稳定；低于 20ms 时直接按目标处理。
+        if (smoothTime < 0.02D) {
+            velocity[0] = 0.0D;
+            return target;
+        }
+        double ratio = Mth.clamp(dampingRatio, 0.5D, 1.5D);
         double omega = 2.0D / smoothTime;
-        double x = omega * dt;
-        double exp = 1.0D / (1.0D + x + 0.48D * x * x + 0.235D * x * x * x);
-        double change = current - target;
-        double maxChange = maxSpeed * smoothTime;
-        change = Mth.clamp(change, -maxChange, maxChange);
-        double temp = (velocity[0] + omega * change) * dt;
-        velocity[0] = (velocity[0] - omega * temp) * exp;
-        return target + (change + temp) * exp;
+        double stiffness = omega * omega;
+        double damping = 2.0D * ratio * omega;
+        int steps = Mth.clamp((int) Math.ceil(dt / (1.0D / 120.0D)), 1, 12);
+        double h = Math.max(1.0E-4D, dt / steps);
+        double value = current;
+        double v = velocity[0];
+        for (int i = 0; i < steps; i++) {
+            double accel = (target - value) * stiffness - v * damping;
+            v += accel * h;
+            v = Mth.clamp(v, -maxSpeed, maxSpeed);
+            value += v * h;
+        }
+        velocity[0] = v;
+        return value;
     }
 
     /** 复刻卓越前线 GameRendererMixin 加到 pose stack 上的滚转量（度）。 */

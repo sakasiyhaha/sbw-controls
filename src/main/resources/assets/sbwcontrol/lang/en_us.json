@@ -105,5 +105,8 @@
   "sbwcontrol.message.scheme.airplane": "Fixed-wing default: %s (settings synced)",
   "sbwcontrol.message.scheme.helicopter": "Helicopter default: %s (settings synced)",
   "sbwcontrol.message.scheme.not_riding": "Ride a fixed-wing/helicopter before pressing B",
-  "sbwcontrol.message.scheme.other": "B only works in fixed-wing/helicopter; other vehicles stay vanilla"
+  "sbwcontrol.message.scheme.other": "B only works in fixed-wing/helicopter; other vehicles stay vanilla",
+  "screen.sbwcontrol.spring_damping": "Spring damping ratio (1=critical)",
+  "screen.sbwcontrol.rate_smoothing": "Angular-rate smoothing (s)",
+  "screen.sbwcontrol.soft_limit": "Turn-lag limit softness (0=hard, 1=smooth)"
 }

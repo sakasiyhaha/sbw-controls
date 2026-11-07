@@ -105,5 +105,8 @@
   "sbwcontrol.message.scheme.airplane": "固定翼默认流派：%s（设置页已同步）",
   "sbwcontrol.message.scheme.helicopter": "直升机默认流派：%s（设置页已同步）",
   "sbwcontrol.message.scheme.not_riding": "请先骑乘固定翼/直升机再按 B",
-  "sbwcontrol.message.scheme.other": "B 仅对固定翼/直升机有效；其他载具保持原版"
+  "sbwcontrol.message.scheme.other": "B 仅对固定翼/直升机有效；其他载具保持原版",
+  "screen.sbwcontrol.spring_damping": "弹簧阻尼比(1=临界)",
+  "screen.sbwcontrol.rate_smoothing": "角速度平滑(秒)",
+  "screen.sbwcontrol.soft_limit": "转向阈值软化(0=硬,1=平滑)"
 }

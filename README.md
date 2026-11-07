@@ -29,6 +29,7 @@ This is an AI-assisted project, not a fully automated one.
 - **Roll-bird control scheme**: mouse X roll, A/D yaw, mouse Y pitch.
 - Yaw-bird / roll-bird / hybrid / fully custom schemes.
 - **BF-style dynamic third-person camera**: turn lag, roll inertia, spring-arm position lag, adaptive damping, speed FOV, dynamic distance and lateral centering.
+- **Camera spring v2**: fixed 120 Hz substep spring, damping ratio (`spring_damping`), angular-rate smoothing (`rate_smoothing`) and soft turn-lag limits (`soft_limit`).
 - **Separate first-person / ADS zoom camera settings**, stock by default.
 - In-game config screen, TOML, 9 native key bindings, client/server commands.
 - **Graceful multiplayer fallback**: clients can join servers without the addon; scheme switching is disabled, camera and client settings still work.
@@ -38,6 +39,7 @@ This is an AI-assisted project, not a fully automated one.
 
 ## Documentation
 
+- [1.1.0 release notes](docs/RELEASE-NOTES-1.1.0.md)
 - [中文完整使用说明](docs/USAGE.zh-CN.md)
 - [English user guide](docs/USAGE.en.md)
 - [Promotion kit](docs/PROMOTION.md)
@@ -48,7 +50,7 @@ This is an AI-assisted project, not a fully automated one.
 
 1. Install Minecraft 1.20.1 + Forge 47.3.0 + Java 17.
 2. Put into `mods/`:
-   - `sbwcontrol-1.0.0.jar` (from Releases)
+   - `sbwcontrol-1.1.0.jar` (from Releases)
    - `superbwarfare-0.8.9.2-all.jar`
    - `kotlinforforge-4.12.0-all.jar`
 3. Launch.
@@ -78,7 +80,7 @@ Windows:
 gradlew.bat build
 ```
 
-Output: `build/libs/sbwcontrol-1.0.0.jar`.
+Output: `build/libs/sbwcontrol-1.1.0.jar`.
 
 ---
 
@@ -86,7 +88,7 @@ Output: `build/libs/sbwcontrol-1.0.0.jar`.
 
 - GitHub: https://github.com/sakasiyhaha/sbw-controls
 - Issues: https://github.com/sakasiyhaha/sbw-controls/issues
-- Modrinth: (to be published)
+- Modrinth: https://modrinth.com/mod/sbw-controls
 - Source and licenses: see `LICENSE` and `docs/`
 
 ---

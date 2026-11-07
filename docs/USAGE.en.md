@@ -4,7 +4,7 @@
 
 - Mod name: **SBW Controls**
 - Mod ID: `sbwcontrol`
-- Version: 1.0.0
+- Version: 1.1.0
 - Author: sakasiyhaha
 - Environment: Minecraft **1.20.1**, Forge **47.3.0**, Java **17**
 - Dependencies: Superb Warfare **0.8.9.2**, Kotlin for Forge **4.12.0**
@@ -83,6 +83,9 @@ If you never use B, change the two defaults directly in **Config → Control**. 
 | Roll inertia | 0.10 s | Camera trails aircraft roll |
 | Position spring | 0.08 s | Spring-arm position lag |
 | Adaptive damping | 1.5 | More agile camera at high yaw/roll rates; 0 = fixed |
+| Spring damping ratio | 0.90 | 1 = critically damped, below 1 = slightly bouncy, above 1 = stiffer |
+| Angular-rate smoothing | 0.10 s | Low-pass time for mouse input; higher = softer onset | 
+| Turn-lag limit softness | 1.0 | tanh soft saturation near the ±12° / ±8° offsets; 0 = old hard clamp |
 
 **First person / crosshair**
 
@@ -97,7 +100,8 @@ If you never use B, change the two defaults directly in **Config → Control**. 
 
 Implementation highlights:
 
-- offsetYaw/Pitch, roll and position use a **critically damped spring** with velocity carried across frames, not per-frame lerp;
+- offsetYaw/Pitch, roll and position use a **fixed 120 Hz substep spring** with velocity carried across frames, not per-frame lerp; damping ratio 0.90 is near critical; 
+- turn offsets use **tanh soft saturation** near the ±12° / ±8° limits, so the camera decelerates instead of hitting a hard clamp;
 - roll target is unwrapped across ±180°, so a fully inverted attitude can smoothly recover;
 - angular rates use tick-level angle deltas with a low-pass filter to avoid frame-rate spikes;
 - first-person/ADS zoom has a separate parameter set.
@@ -137,7 +141,7 @@ The Operation tab has buttons for the vanilla key-bind screen and resetting only
 
 1. Install Minecraft 1.20.1, Forge 47.3.0 and Java 17.
 2. Put these files in `mods/`:
-   - `sbwcontrol-1.0.0.jar`
+   - `sbwcontrol-1.1.0.jar`
    - `superbwarfare-0.8.9.2-all.jar`
    - `kotlinforforge-4.12.0-all.jar`
 3. Launch.
@@ -146,7 +150,7 @@ GeckoLib, Cloth Config, Curios, Flywheel, Ponder, SimpleBedrockModel and Rhino a
 
 ### Modpack
 
-Import the `SBW-Controls-Pack-1.0.0` folder (or zip) into Prism Launcher / MultiMC, or copy `mods/`, `config/` and `defaultconfigs/` into a 1.20.1 + Forge 47.3.0 instance.
+Import the `SBW-Controls-Pack-1.1.0` folder (or zip) into Prism Launcher / MultiMC, or copy `mods/`, `config/` and `defaultconfigs/` into a 1.20.1 + Forge 47.3.0 instance.
 
 ---
 
@@ -168,18 +172,27 @@ Import the `SBW-Controls-Pack-1.0.0` folder (or zip) into Prism Launcher / Multi
 - increase Roll inertia (0.10 → 0.15–0.20)
 - increase Position spring (0.08 → 0.12–0.18)
 - increase Adaptive damping (1.5 → 2–3)
+- lower Spring damping ratio (0.90 → 0.82–0.88) for a little bounce
+- increase Angular-rate smoothing (0.10 → 0.12–0.15) for a softer onset
+- keep Turn-lag limit softness at 1.0
 
 **Camera feels too swingy / motion sickness**
 - decrease Turn lag
 - decrease Roll inertia
 - decrease Position spring
 - lower Roll follow ratio to 0.7 or lower
+- raise Spring damping ratio (0.95–1.05) to reduce bounce
+- lower Angular-rate smoothing (0.08–0.10) to reduce lag
 
 **Left/right or up/down is inverted**
 - enable the corresponding “Invert turn lag” toggle
 
 **ADS zoom still moves**
 - keep “First-person dynamics” off; or set FP turn lag/roll inertia/position spring to 0
+
+**The turn-lag limit still feels abrupt**
+- keep Turn-lag limit softness at 1.0; increase Turn lag (0.22 → 0.28–0.36) so the target reaches the limit more slowly
+- if the maximum offset now feels too small, increase Turn lag or use 0.85–0.95 as a compromise
 
 **Low FPS makes the camera choppy**
 - check F3; if FPS is very low, fix performance first. A per-frame camera cannot look smoother than the frame rate.
@@ -266,7 +279,7 @@ The jar uses `displayTest="IGNORE_ALL_VERSION"`, so a missing server-side addon 
 - Keep First-person dynamics off, or set FP turn lag/roll inertia/position spring to 0.
 
 **Inverted camera does not recover**
-- 1.0.0 fixes the ±180° roll discontinuity. If it still happens, set `camera.roll_ratio` to 0 and report with logs.
+- 1.1.0 fixes the ±180° roll discontinuity. If it still happens, set `camera.roll_ratio` to 0 and report with logs.
 
 ---
 

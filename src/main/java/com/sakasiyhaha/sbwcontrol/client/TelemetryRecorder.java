@@ -185,6 +185,9 @@ public final class TelemetryRecorder {
         cfg.addProperty("turnLagInvert", ClientConfig.CAMERA_TURN_LAG_INVERT.get());
         cfg.addProperty("positionLag", ClientConfig.CAMERA_POSITION_LAG.get());
         cfg.addProperty("adaptiveGain", ClientConfig.CAMERA_ADAPTIVE_GAIN.get());
+        cfg.addProperty("springDamping", ClientConfig.CAMERA_SPRING_DAMPING.get());
+        cfg.addProperty("rateSmoothing", ClientConfig.CAMERA_RATE_SMOOTHING.get());
+        cfg.addProperty("softLimit", ClientConfig.CAMERA_SOFT_LIMIT.get());
         cfg.addProperty("rollRatio", ClientConfig.CAMERA_ROLL_RATIO.get());
         cfg.addProperty("centerLateral", ClientConfig.CAMERA_CENTER_LATERAL.get());
         cfg.addProperty("distanceGain", ClientConfig.CAMERA_DISTANCE_GAIN.get());
@@ -291,6 +294,9 @@ public final class TelemetryRecorder {
         params.addProperty("turnLag", ClientConfig.CAMERA_LEAD.get());
         params.addProperty("positionLag", ClientConfig.CAMERA_POSITION_LAG.get());
         params.addProperty("adaptiveGain", ClientConfig.CAMERA_ADAPTIVE_GAIN.get());
+        params.addProperty("springDamping", ClientConfig.CAMERA_SPRING_DAMPING.get());
+        params.addProperty("rateSmoothing", ClientConfig.CAMERA_RATE_SMOOTHING.get());
+        params.addProperty("softLimit", ClientConfig.CAMERA_SOFT_LIMIT.get());
         params.addProperty("lagYaw", ClientConfig.CAMERA_LAG_YAW.get());
         params.addProperty("lagPitch", ClientConfig.CAMERA_LAG_PITCH.get());
         params.addProperty("lagRoll", ClientConfig.CAMERA_LAG_ROLL.get());

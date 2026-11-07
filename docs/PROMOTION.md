@@ -66,7 +66,7 @@
 
 ### 4.1 QQ 群 / Discord 中文短消息
 
-> 【卓越前线附属】SBW Controls 1.0.0
+> 【卓越前线附属】SBW Controls 1.1.0
 >
 > 给卓越前线的固定翼/直升机加了“翻滚鸟”操控：鼠标左右滚转、A/D 偏航；还有战地风动态第三人称相机（转向滞后/滚转惯性/位置弹簧/自适应阻尼）。右键瞄准放大有独立参数，不跟第三人称甩。
 >
@@ -92,7 +92,7 @@
 
 ### 4.3 Reddit / Discord English short post
 
-> **SBW Controls 1.0.0 — roll-bird flight controls + dynamic third-person camera for Superb Warfare**
+> **SBW Controls 1.1.0 — roll-bird flight controls + dynamic third-person camera for Superb Warfare**
 >
 > - Mouse X roll, A/D yaw, mouse Y pitch (plus yaw-bird / hybrid / fully custom schemes)
 > - BF-style third-person camera: turn lag, roll inertia, spring-arm position lag, adaptive damping, speed FOV
@@ -237,7 +237,7 @@ GPL-3.0
 ## 10. 宣传素材路径
 
 ```
-SBW-Controls-Pack-1.0.0/
+SBW-Controls-Pack-1.1.0/
 ├─ docs/
 │  ├─ USAGE.zh-CN.md      # 中文详细使用说明
 │  ├─ USAGE.en.md         # English user guide
@@ -246,5 +246,5 @@ SBW-Controls-Pack-1.0.0/
 │     ├─ banner.png       # 1280×360 宣传横幅
 │     └─ logo.png         # 方形图标
 └─ source/
-   └─ sbwcontrol-1.0.0-src.zip
+   └─ sbwcontrol-1.1.0-src.zip
 ```

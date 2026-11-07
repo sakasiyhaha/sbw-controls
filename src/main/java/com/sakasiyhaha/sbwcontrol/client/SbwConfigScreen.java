@@ -258,9 +258,18 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
                 addRenderableWidget(slider(left, row + step * 3, w, "screen.sbwcontrol.position_lag",
                         0.0, 0.3, ClientConfig.CAMERA_POSITION_LAG.get(),
                         ClientConfig.CAMERA_POSITION_LAG::set, sec()));
+                addRenderableWidget(slider(left, row + step * 4, w, "screen.sbwcontrol.spring_damping",
+                        0.5, 1.5, ClientConfig.CAMERA_SPRING_DAMPING.get(),
+                        ClientConfig.CAMERA_SPRING_DAMPING::set, num()));
                 addRenderableWidget(slider(right, row, w, "screen.sbwcontrol.adaptive",
                         0.0, 5.0, ClientConfig.CAMERA_ADAPTIVE_GAIN.get(),
                         ClientConfig.CAMERA_ADAPTIVE_GAIN::set, num()));
+                addRenderableWidget(slider(right, row + step, w, "screen.sbwcontrol.rate_smoothing",
+                        0.0, 0.3, ClientConfig.CAMERA_RATE_SMOOTHING.get(),
+                        ClientConfig.CAMERA_RATE_SMOOTHING::set, sec()));
+                addRenderableWidget(slider(right, row + step * 2, w, "screen.sbwcontrol.soft_limit",
+                        0.0, 1.0, ClientConfig.CAMERA_SOFT_LIMIT.get(),
+                        ClientConfig.CAMERA_SOFT_LIMIT::set, num()));
             }
             case FIRST_PERSON -> {
                 addRenderableWidget(toggle(left, row, w, "screen.sbwcontrol.first_person",
@@ -433,6 +442,9 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
                         ClientConfig.CAMERA_TURN_LAG_INVERT_PITCH.set(false);
                         ClientConfig.CAMERA_LAG_ROLL.set(0.10D);
                         ClientConfig.CAMERA_POSITION_LAG.set(0.08D);
+                        ClientConfig.CAMERA_SPRING_DAMPING.set(0.90D);
+                        ClientConfig.CAMERA_RATE_SMOOTHING.set(0.10D);
+                        ClientConfig.CAMERA_SOFT_LIMIT.set(1.0D);
                         ClientConfig.CAMERA_ADAPTIVE_GAIN.set(1.5D);
                     }
                     case FIRST_PERSON -> {

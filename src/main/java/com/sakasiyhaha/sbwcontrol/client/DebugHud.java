@@ -12,6 +12,7 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.ArrayList;
@@ -36,7 +37,8 @@ public final class DebugHud {
         }
         GuiGraphics graphics = event.getGuiGraphics();
         List<String> lines = new ArrayList<>(8);
-        lines.add("SBW Controls 1.0.0");
+        lines.add("SBW Controls " + ModList.get().getModContainerById(SbwControl.MODID)
+                .map(container -> container.getModInfo().getVersion().toString()).orElse("dev"));
         lines.add("scheme=" + ClientControlHandler.getLastScheme()
                 + " active=" + ClientControlHandler.isActive());
         lines.add(String.format("ch p=%.2f r=%.2f y=%.2f stick=%.2f/%.2f",
