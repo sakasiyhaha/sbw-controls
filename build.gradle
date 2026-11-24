@@ -3,6 +3,7 @@ plugins {
     id 'idea'
     id 'maven-publish'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.38'
 }
 
 version = mod_version
@@ -16,6 +17,12 @@ base {
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 println "Java: ${System.getProperty 'java.version'}, JVM: ${System.getProperty 'java.vm.version'} (${System.getProperty 'java.vendor'}), Arch: ${System.getProperty 'os.arch'}"
+
+mixin {
+    add sourceSets.main, "${mod_id}.refmap.json"
+    config "${mod_id}.mixins.json"
+}
+
 minecraft {
     // 映射表（mappings）可以随时更改，且必须遵循以下格式。
     // 渠道:      版本:
@@ -139,6 +146,18 @@ dependencies {
     // 如果 group id 是 "net.minecraft" 且 artifact id 是 ["client", "server", "joined"] 之一，
     // 则会进行特殊处理，以便在不使用外部仓库的情况下设置原版依赖项。
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    // Mixin 编译（本地缓存 0.8.5）：编译期注解 + refmap 生成；运行时由 Forge 自带 mixin 提供
+    compileOnly 'org.spongepowered:mixin:0.8.5'
+    annotationProcessor 'org.spongepowered:mixin:0.8.5'
+    // Mixin 注解处理器运行时依赖（本地缓存；-processor classifier 未缓存时手动补齐）
+    annotationProcessor files('D:\\Gradle_Cache\\.gradle\\caches\\modules-2\\files-2.1\\com.google.code.gson\\gson\\2.10.1\\b3add478d4382b78ea20b1671390a858002feb6c\\gson-2.10.1.jar',
+            'D:\\Gradle_Cache\\.gradle\\caches\\modules-2\\files-2.1\\com.google.guava\\guava\\31.1-jre\\60458f877d055d0c9114d9e1a2efb737b4bc282c\\guava-31.1-jre.jar',
+            'D:\\Gradle_Cache\\.gradle\\caches\\modules-2\\files-2.1\\org.ow2.asm\\asm\\9.7\\73d7b3086e14beb604ced229c302feff6449723\\asm-9.7.jar',
+            'D:\\Gradle_Cache\\.gradle\\caches\\modules-2\\files-2.1\\org.ow2.asm\\asm-tree\\9.7\\e446a17b175bfb733b87c5c2560ccb4e57d69f1a\\asm-tree-9.7.jar',
+            'D:\\Gradle_Cache\\.gradle\\caches\\modules-2\\files-2.1\\org.ow2.asm\\asm-commons\\9.7\\e86dda4696d3c185fcc95d8d311904e7ce38a53f\\asm-commons-9.7.jar',
+            'D:\\Gradle_Cache\\.gradle\\caches\\modules-2\\files-2.1\\org.ow2.asm\\asm-util\\9.7\\c0655519f24d92af2202cb681cd7c1569df6ead6\\asm-util-9.7.jar',
+            'D:\\Gradle_Cache\\.gradle\\caches\\modules-2\\files-2.1\\org.ow2.asm\\asm-analysis\\9.7\\e4a258b7eb96107106c0599f0061cfc1832fe07a\\asm-analysis-9.7.jar')
 
     // ===== 附属模组依赖：卓越前线 Superb Warfare（GPL-3.0，仅供开发期链接，不打包进本模组）=====
     // 文件：./libs/superbwarfare-0.8.9.2-all.jar（0.8.9.2-mc1.20.1，2026-09-30 官方最新）

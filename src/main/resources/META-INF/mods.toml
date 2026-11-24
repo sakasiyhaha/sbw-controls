@@ -43,8 +43,7 @@ displayTest="IGNORE_ALL_VERSION"
 # 模组的描述文本（支持多行！）(#mandatory)
 description='''${mod_description}'''
 # 依赖项 - 使用 . 来指示对特定 modid 的依赖。依赖项是可选的。
-[[dependencies.${mod_id}]] #optional
-# 依赖项的 modid
+[[dependencies.${mod_id}]] #optional# 依赖项的 modid
 modId="forge" #mandatory
 # 此依赖项是否必须存在 - 如果为 false，则必须指定下面的 ordering
 mandatory=true #mandatory
@@ -80,3 +79,7 @@ side="BOTH"
 # 阻止你的模组在服务端上加载。
 #[features.${mod_id}]
 #openGLVersion="[3.2,)"
+
+# Mixin 配置：RollBird 中心瞄准开火方向覆盖
+[[mixins]]
+config="sbwcontrol.mixins.json"

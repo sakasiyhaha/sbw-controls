@@ -9,6 +9,7 @@ import com.sakasiyhaha.sbwcontrol.control.AxisSource;
 import com.sakasiyhaha.sbwcontrol.control.InputMode;
 import com.sakasiyhaha.sbwcontrol.config.ClientConfig;
 import com.sakasiyhaha.sbwcontrol.control.ClientSupport;
+import com.sakasiyhaha.sbwcontrol.camera.view.CameraViewMode;
 import com.sakasiyhaha.sbwcontrol.control.ControlScheme;
 import com.sakasiyhaha.sbwcontrol.control.VehicleCategory;
 import com.sakasiyhaha.sbwcontrol.key.ModKeys;
@@ -45,12 +46,16 @@ public final class ClientControlHandler {
     private static double lastMouseY;
     private static boolean hasMousePos;
     private static boolean active;
+    /** 本 tick 是否存在原始鼠标/按键输入（未经平滑），供相机回正立即让权使用。 */
+    private static boolean rawInputActive;
     private static ControlScheme lastScheme = ControlScheme.YAW_BIRD;
     private static long lastWarnTick;
 
     private static float pitch;
     private static float roll;
     private static float yaw;
+    /** 最终发给服务端/相机的偏航通道（已乘灵敏度比例）。 */
+    private static float controlYaw;
     /** STICK 模式：鼠标累积出的虚拟摇杆位置（-1..1）。 */
     private static float stickX;
     private static float stickY;
@@ -115,15 +120,17 @@ public final class ClientControlHandler {
 
         if (!shouldApply) {
             if (active) {
-                ControlNetwork.sendToServer(new CtlPacket(0.0F, 0.0F, 0.0F, scheme, false));
+                ControlNetwork.sendToServer(new CtlPacket(0.0F, 0.0F, 0.0F, scheme, false, false, 0.0F, 0.0F));
                 active = false;
                 lastScheme = scheme;
             }
             pitch = 0.0F;
             roll = 0.0F;
             yaw = 0.0F;
+            controlYaw = 0.0F;
             stickX = 0.0F;
             stickY = 0.0F;
+            rawInputActive = false;
             return;
         }
 
@@ -184,15 +191,40 @@ public final class ClientControlHandler {
         rawPitch = shape(rawPitch, ClientConfig.PITCH_GAIN.get(), ClientConfig.INVERT_PITCH.get());
         rawRoll = shape(rawRoll, ClientConfig.ROLL_GAIN.get(), ClientConfig.INVERT_ROLL.get());
         rawYaw = shape(rawYaw, ClientConfig.YAW_GAIN.get(), ClientConfig.INVERT_YAW.get());
+        rawInputActive = Math.abs(rawPitch) + Math.abs(rawRoll) + Math.abs(rawYaw) > 1.0E-4F;
 
         float alpha = smoothingAlpha();
         pitch += (rawPitch - pitch) * alpha;
         roll += (rawRoll - roll) * alpha;
         yaw += (rawYaw - yaw) * alpha;
+        // 客户端只决定使用服务端最大偏航速度的比例。
+        controlYaw = (float) Mth.clamp((double) yaw * ClientConfig.YAW_SENSITIVITY.get(), -1.0D, 1.0D);
 
-        ControlNetwork.sendToServer(new CtlPacket(pitch, roll, yaw, scheme, true));
+        boolean centerAim = shouldCenterAim(scheme, vehicle);
+        float aimYaw = centerAim ? vehicle.getYaw(1.0F) : 0.0F;
+        float aimPitch = centerAim ? vehicle.getPitch(1.0F) : 0.0F;
+        ControlNetwork.sendToServer(new CtlPacket(pitch, roll, controlYaw, scheme, true,
+                centerAim, aimYaw, aimPitch));
         active = true;
         lastScheme = scheme;
+
+        // 中心瞄准时客户端玩家视线也必须指向同一客户端 aim。
+        // SW 客户端炮塔自动瞄准/HUD 以 player.getViewVector() 为目标；
+        // 不同步会让服务端炮弹朝 aim 飞，而客户端炮管/准星仍在鼠标方向。
+        if (centerAim) {
+            player.setYRot(aimYaw);
+            player.setXRot(aimPitch);
+            player.setYHeadRot(aimYaw);
+        }
+    }
+
+    /**
+     * RollBird 全程中心锁定：不管第一人称/跟随/动态相机，都把子弹方向固定在
+     * “客户端当帧机体前向”，避免 A/D 做圆周运动时子弹偏到旋转切线方向。
+     * 动态相机下屏幕中心不等于机头，但开火方向仍以机体/发射装置为准。
+     */
+    private static boolean shouldCenterAim(ControlScheme scheme, VehicleEntity vehicle) {
+        return scheme == ControlScheme.ROLL_BIRD;
     }
 
     private static float resolveAxis(AxisSource source, double dx, double dy, double pxToUnit,
@@ -265,8 +297,14 @@ public final class ClientControlHandler {
             toggleScheme(player);
         }
         while (ModKeys.TOGGLE_CAMERA.consumeClick()) {
-            ClientConfig.CAMERA_ENABLED.set(!ClientConfig.CAMERA_ENABLED.get());
+            CameraViewMode[] values = CameraViewMode.values();
+            CameraViewMode next = values[(ClientConfig.CAMERA_GLOBAL_VIEW_MODE.get().ordinal() + 1) % values.length];
+            ClientConfig.CAMERA_GLOBAL_VIEW_MODE.set(next);
             ClientConfig.SPEC.save();
+            if (player != null) {
+                player.displayClientMessage(Component.translatable("sbwcontrol.message.view_mode",
+                        Component.translatable("screen.sbwcontrol.viewmode." + next.name())), true);
+            }
         }
         while (ModKeys.OPEN_CONFIG.consumeClick()) {
             mc.setScreen(new SbwConfigScreen(null));
@@ -313,8 +351,10 @@ public final class ClientControlHandler {
         pitch = 0.0F;
         roll = 0.0F;
         yaw = 0.0F;
+        controlYaw = 0.0F;
         stickX = 0.0F;
         stickY = 0.0F;
+        rawInputActive = false;
     }
 
     @SubscribeEvent
@@ -330,6 +370,11 @@ public final class ClientControlHandler {
         return active;
     }
 
+    /** 本 tick 是否有原始输入；用于让回正动画立即让权给玩家输入。 */
+    public static boolean isRawInputActive() {
+        return rawInputActive;
+    }
+
     public static ControlScheme getLastScheme() {
         return lastScheme;
     }
@@ -343,7 +388,7 @@ public final class ClientControlHandler {
     }
 
     public static float getYaw() {
-        return yaw;
+        return controlYaw;
     }
 
     public static float getStickX() {

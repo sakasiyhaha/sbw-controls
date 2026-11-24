@@ -99,26 +99,22 @@ public final class SelfTestRunner {
         float roll = 1.0F;
         float yaw = -1.0F;
         ServerControlHandler.applyToVehicle(vehicle,
-                new RemoteInput(pitch, roll, yaw, ControlScheme.ROLL_BIRD, true, 0L));
+                new RemoteInput(pitch, roll, yaw, ControlScheme.ROLL_BIRD, true, false, 0.0F, 0.0F, 0L));
 
         double expectPitch = pitch * ServerConfig.PITCH_SCALE.get();
-        double expectRoll = -roll * ServerConfig.ROLL_SCALE.get();
-        double expectYaw = yaw * ServerConfig.YAW_SCALE.get();
         double eps = 1.0E-3D;
 
-        if (Math.abs(vehicle.getMouseMoveSpeedX() - expectYaw) > eps) {
-            throw new IllegalStateException("yaw channel mismatch: got " + vehicle.getMouseMoveSpeedX() + " expected " + expectYaw);
+        if (Math.abs(vehicle.getMouseMoveSpeedX()) > eps) {
+            throw new IllegalStateException("mouse X must stay 0 in direct-yaw RollBird: got " + vehicle.getMouseMoveSpeedX());
         }
         if (Math.abs(vehicle.getMouseMoveSpeedY() - expectPitch) > eps) {
             throw new IllegalStateException("pitch channel mismatch: got " + vehicle.getMouseMoveSpeedY() + " expected " + expectPitch);
         }
-        if (Math.abs(vehicle.getDeltaRot() - expectRoll) > eps) {
-            throw new IllegalStateException("roll channel mismatch: got " + vehicle.getDeltaRot() + " expected " + expectRoll);
+        if (!vehicle.rightInputDown() || vehicle.leftInputDown()) {
+            throw new IllegalStateException("roll key simulation mismatch: right=" + vehicle.rightInputDown()
+                    + " left=" + vehicle.leftInputDown());
         }
-        if (vehicle.leftInputDown() || vehicle.rightInputDown()) {
-            throw new IllegalStateException("A/D input flags were not cleared");
-        }
-        double expectExtraYaw = inputYawDelta(yaw);
+        double expectExtraYaw = yaw * ServerConfig.MAX_YAW_RATE.get() * 0.05D;
         double actualExtraYaw = net.minecraft.util.Mth.wrapDegrees(vehicle.getYRot());
         if (Math.abs(net.minecraft.util.Mth.wrapDegrees((float) (actualExtraYaw - expectExtraYaw))) > 0.05D) {
             throw new IllegalStateException("extra yaw delta mismatch: got " + actualExtraYaw
@@ -200,10 +196,5 @@ public final class SelfTestRunner {
             ServerConfig.ALLOW_ROLL_BIRD.set(original);
         }
         SbwControl.LOGGER.info("[sbwcontrol][SELFTEST] support/fallback test OK");
-    }
-
-    /** applyToVehicle 里额外直接偏航的期望增量（度）：yaw * 角速度 * 1 tick(0.05s)。 */
-    private static double inputYawDelta(float yaw) {
-        return yaw * ServerConfig.EXTRA_YAW_RATE.get() * 0.05D;
     }
 }

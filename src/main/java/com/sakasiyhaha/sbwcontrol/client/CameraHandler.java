@@ -7,6 +7,14 @@ import com.atsuishio.superbwarfare.entity.vehicle.base.VehicleEntity;
 import com.atsuishio.superbwarfare.event.ClientEventHandler;
 import com.sakasiyhaha.sbwcontrol.SbwControl;
 import com.sakasiyhaha.sbwcontrol.camera.CameraPreset;
+import com.sakasiyhaha.sbwcontrol.camera.view.CameraViewMode;
+import com.sakasiyhaha.sbwcontrol.camera.view.VehicleViewMode;
+import com.sakasiyhaha.sbwcontrol.camera.dynamic.CenteredChaseCamera;
+import com.sakasiyhaha.sbwcontrol.camera.dynamic.DynamicCameraContext;
+import com.sakasiyhaha.sbwcontrol.camera.dynamic.DynamicCameraEngine;
+import com.sakasiyhaha.sbwcontrol.camera.offset.OffsetController;
+import com.sakasiyhaha.sbwcontrol.camera.offset.OffsetPhase;
+import com.sakasiyhaha.sbwcontrol.camera.offset.OffsetResult;
 import com.sakasiyhaha.sbwcontrol.config.ClientConfig;
 import net.minecraft.client.Camera;
 import net.minecraft.client.CameraType;
@@ -38,11 +46,37 @@ import net.minecraftforge.fml.common.Mod;
 @Mod.EventBusSubscriber(modid = SbwControl.MODID, value = Dist.CLIENT)
 public final class CameraHandler {
 
+    private static final OffsetController OFFSET_CONTROLLER = new OffsetController();
+    private static boolean offsetEngineWasV2 = true;
+    private static final DynamicCameraEngine DYNAMIC_ENGINE = new DynamicCameraEngine();
+    private static final CenteredChaseCamera CENTERED_CHASE = new CenteredChaseCamera();
+    private static boolean dynamicEngineWasV3 = true;
+
     private static int trackedVehicleId = -1;
     private static double prevYaw;
     private static double prevPitch;
     private static double offsetYaw;
     private static double offsetPitch;
+    /** 二维误差圆回正状态。 */
+    private static boolean recenterActive;
+    private static boolean recenterHoldActive;
+    private static double recenterNeutralTime;
+    /** 上一帧回正开关状态，用于关闭回正时清理旧速度。 */
+    private static boolean recenterWasEnabled = true;
+    /** 边缘制动的平滑状态：避免径向速度符号变化时阻尼/限速瞬间跳变。 */
+    private static double edgeBrakeState;
+    private static double edgeSpeedScale = 1.0D;
+    private static boolean edgeBrakeLatched;
+    private static OffsetPhase offsetPhase = OffsetPhase.NORMAL;
+    /** 动态偏移的绝对最大角度；边缘误差圆在此基础上向内收缩。 */
+    private static final double CAMERA_YAW_LIMIT = 12.0D;
+    private static final double CAMERA_PITCH_LIMIT = 8.0D;
+    private static double recenterStartRadius;
+    private static double recenterAngle;
+    private static double recenterElapsed;
+    private static double recenterHoldElapsed;
+    private static double recenterHoldYaw;
+    private static double recenterHoldPitch;
     private static double extraDistance;
     /** 平滑后的相机滚转（总滚转，含 SW 自身的 pose 滚转）。 */
     private static double smoothedRoll = Double.NaN;
@@ -59,11 +93,18 @@ public final class CameraHandler {
     private static double lastAgility = 1.0D;
     private static double lastActivity;
     private static boolean lastApplied;
+    private static boolean lastHelicopter;
+    private static boolean lastRollFollowEnabled;
+    private static double lastRollCoupling;
 
     /** 非线性（临界阻尼弹簧）平滑状态：速度会跨帧保留，避免每帧直接跳到目标造成"生硬帧感"。 */
     private static final double[] OFFSET_YAW_VEL = new double[1];
     private static final double[] OFFSET_PITCH_VEL = new double[1];
     private static final double[] ROLL_VEL = new double[1];
+    /** 相机机位绕机体纵轴的 Sticky 滚转（度）。 */
+    private static double orbitRoll = Double.NaN;
+    private static final double[] ORBIT_VEL = new double[1];
+    private static double lastOrbitRoll;
     private static final double[] REL_X_VEL = new double[1];
     private static final double[] REL_Y_VEL = new double[1];
     private static final double[] REL_Z_VEL = new double[1];
@@ -75,11 +116,20 @@ public final class CameraHandler {
     private CameraHandler() {
     }
 
+    /** 解析当前载具的 TPS 视角模式。 */
+    private static CameraViewMode resolveViewMode(VehicleType type) {
+        CameraViewMode global = ClientConfig.CAMERA_GLOBAL_VIEW_MODE.get();
+        VehicleViewMode raw = type == VehicleType.HELICOPTER
+                ? ClientConfig.CAMERA_HELICOPTER_VIEW_MODE.get()
+                : ClientConfig.CAMERA_AIRPLANE_VIEW_MODE.get();
+        return raw.resolve(global);
+    }
+
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
-        if (player == null || !ClientConfig.CAMERA_ENABLED.get()) {
+        if (player == null) {
             resetTrack();
             return;
         }
@@ -87,15 +137,31 @@ public final class CameraHandler {
             resetTrack();
             return;
         }
-        CameraPreset preset = ClientConfig.CAMERA_PRESET.get();
-        if (preset == CameraPreset.VANILLA) {
-            return;
-        }
         VehicleType type = vehicle.getVehicleType();
         if (type != VehicleType.AIRPLANE && type != VehicleType.HELICOPTER) {
             resetTrack();
             return;
         }
+        // 卓越前线原生自由相机自己控制视角，不能叠加 Sticky/动态偏移。
+        if (ClientEventHandler.isFreeCam(player)) {
+            resetTrack();
+            return;
+        }
+        boolean helicopter = type == VehicleType.HELICOPTER;
+        CameraPreset preset = ClientConfig.CAMERA_PRESET.get();
+        boolean rollFollowEnabled = helicopter
+                ? ClientConfig.CAMERA_ROLL_HELICOPTER_ENABLED.get()
+                : ClientConfig.CAMERA_ROLL_AIRPLANE_ENABLED.get();
+        double rollCoupling = rollFollowEnabled
+                ? (helicopter ? ClientConfig.CAMERA_ROLL_HELICOPTER_COUPLING.get()
+                        : ClientConfig.CAMERA_ROLL_AIRPLANE_COUPLING.get())
+                : 0.0D;
+        double categoryRollLag = helicopter
+                ? ClientConfig.CAMERA_ROLL_HELICOPTER_LAG.get()
+                : ClientConfig.CAMERA_ROLL_AIRPLANE_LAG.get();
+        lastHelicopter = helicopter;
+        lastRollFollowEnabled = rollFollowEnabled;
+        lastRollCoupling = rollCoupling;
         boolean zoomView = ClientEventHandler.zoomVehicle;
         boolean firstPersonView = mc.options.getCameraType() == CameraType.FIRST_PERSON || zoomView;
         if (firstPersonView && !ClientConfig.CAMERA_FIRST_PERSON.get()) {
@@ -108,240 +174,35 @@ public final class CameraHandler {
             resetTrack();
             return;
         }
-
-        float partial = (float) event.getPartialTick();
-        double vehicleYaw = vehicle.getYaw(partial);
-        double vehiclePitch = vehicle.getPitch(partial);
-        if (vehicle.getId() != trackedVehicleId) {
-            trackedVehicleId = vehicle.getId();
-            prevYaw = vehicleYaw;
-            prevPitch = vehiclePitch;
-            offsetYaw = 0.0D;
-            offsetPitch = 0.0D;
-            // 换载具时滚转目标可能从任意角度开始，避免用上一架载具的连续角做参照。
-            smoothedRoll = Double.NaN;
-            ROLL_VEL[0] = 0.0D;
-            lastStockRoll = 0.0D;
+        CameraViewMode viewMode = resolveViewMode(type);
+        if (fp) {
+            // 第一人称/ADS 始终使用卓越前线原生相机。
+            resetTrack();
+            return;
         }
-        double deltaYaw = Mth.wrapDegrees(vehicleYaw - prevYaw);
-        double deltaPitch = vehiclePitch - prevPitch;
-        prevYaw = vehicleYaw;
-        prevPitch = vehiclePitch;
-
-        double dt = Math.max(1.0E-3D, mc.getDeltaFrameTime());
-        // 第一人称（含右键瞄准的第一人称放大）使用独立参数，不套用第三人称动态设置。
-        double lagYaw = fp ? ClientConfig.CAMERA_FP_LAG_YAW.get()
-                : ClientConfig.CAMERA_LAG_YAW.get() * preset.lagYawScale;
-        double lagPitch = fp ? ClientConfig.CAMERA_FP_LAG_PITCH.get()
-                : ClientConfig.CAMERA_LAG_PITCH.get() * preset.lagPitchScale;
-        // 用 tick 级角速度（每 tick 角度差 × 20）而不是帧间插值差 / dt：
-        // 后者在帧率波动或网络同步更新时会产生尖峰，导致相机（和飞机观感）抖动。
-        double rawYawRate = Mth.wrapDegrees(vehicle.getYRot() - vehicle.yRotO) * 20.0D;
-        double rawPitchRate = (vehicle.getXRot() - vehicle.xRotO) * 20.0D;
-        double rateSmoothing = fp ? Math.min(0.10D, ClientConfig.CAMERA_RATE_SMOOTHING.get())
-                : ClientConfig.CAMERA_RATE_SMOOTHING.get();
-        smoothedYawRate += (rawYawRate - smoothedYawRate) * alpha(dt, rateSmoothing);
-        smoothedPitchRate += (rawPitchRate - smoothedPitchRate) * alpha(dt, rateSmoothing);
-        // 翻滚角速度（度/秒）：用于把“偏航/翻滚速度”也纳入相机阻尼的参考。
-        double vehicleRoll = vehicle.getRoll(partial);
-        if (Double.isNaN(prevVehicleRoll)) {
-            prevVehicleRoll = vehicleRoll;
+        if (viewMode == CameraViewMode.NATIVE) {
+            resetTrack();
+            return;
         }
-        double rawRollRate = Mth.wrapDegrees(vehicleRoll - prevVehicleRoll) / dt;
-        prevVehicleRoll = vehicleRoll;
-        smoothedRollRate += (rawRollRate - smoothedRollRate) * alpha(dt, rateSmoothing);
-
-        // 自适应阻尼：机动越剧烈（偏航/翻滚角速度越大），相机滞后时间越短，跟随越跟手。
-        double adaptiveGain = fp ? ClientConfig.CAMERA_FP_ADAPTIVE_GAIN.get()
-                : ClientConfig.CAMERA_ADAPTIVE_GAIN.get();
-        double activity = Mth.clamp((Math.abs(smoothedYawRate) + Math.abs(smoothedRollRate)) / 120.0D,
-                0.0D, 1.0D);
-        double agility = 1.0D + adaptiveGain * activity;
-        lastAgility = agility;
-        lastActivity = activity;
-        lagYaw /= agility;
-        lagPitch /= agility;
-        // lead 是“转向滞后秒数”：相机偏移量 = 角速度(°/s) × 滞后秒数。
-        double lagSeconds = fp ? ClientConfig.CAMERA_FP_TURN_LAG.get()
-                : ClientConfig.CAMERA_LEAD.get() * preset.leadScale;
-        double turnSign = ClientConfig.CAMERA_TURN_LAG_INVERT.get() ? 1.0D : -1.0D;
-        double turnSignPitch = ClientConfig.CAMERA_TURN_LAG_INVERT_PITCH.get() ? 1.0D : -1.0D;
-        double softness = fp ? 0.0D : ClientConfig.CAMERA_SOFT_LIMIT.get();
-        double targetYaw = softLimit(turnSign * smoothedYawRate * lagSeconds, 12.0D, softness);
-        double targetPitch = softLimit(turnSignPitch * smoothedPitchRate * lagSeconds, 8.0D, softness);
-        // 右键瞄准（第一人称放大）不再按第三人称 ADS 比例缩放；第一人称参数已独立。
-        double adsScale = fp ? 1.0D
-                : (ClientEventHandler.zoomVehicle ? ClientConfig.CAMERA_ADS_SCALE.get() : 1.0D);
-        targetYaw *= adsScale;
-        targetPitch *= adsScale;
-        double springDamping = fp ? 1.0D : ClientConfig.CAMERA_SPRING_DAMPING.get();
-        offsetYaw = springStep(offsetYaw, targetYaw, OFFSET_YAW_VEL, lagYaw, springDamping, 180.0D, dt);
-        offsetPitch = springStep(offsetPitch, targetPitch, OFFSET_PITCH_VEL, lagPitch, springDamping, 120.0D, dt);
-        // 以 SW/原版刚刚设置好的角度为基准叠加偏移，而不是重新覆盖成载具姿态：
-        // 这样右键瞄准（SW 用炮口/视向量算相机）时不会被我们打断。
-        double baseYaw = event.getYaw();
-        double basePitch = event.getPitch();
-        double finalYaw = baseYaw + offsetYaw;
-        double finalPitch = basePitch + offsetPitch;
-        event.setYaw((float) finalYaw);
-        event.setPitch((float) finalPitch);
-        lastCamYaw = finalYaw;
-        lastCamPitch = finalPitch;
-        lastApplied = true;
-
-        // 相机滚转：第一人称/瞄准放大保持原版（或 FP 专用小参数），不套用第三人称滚转惯性。
-        if (!fp) {
-            // 原始公式在机体 roll 越过 ±180° 时会跳变 360°；先把它展开成连续角，
-            // 否则弹簧会追一个突变目标，镜头完全倒置后无法平滑回到正位。
-            double rawStockRoll = stockCameraRoll(vehicle, seat, partial,
-                    Double.isNaN(lastFinalCameraYaw) ? baseYaw : lastFinalCameraYaw);
-            double stockRoll = unwrapNear(rawStockRoll, lastStockRoll);
-            double rollRatio = ClientConfig.CAMERA_ROLL_RATIO.get();
-            double targetRoll = unwrapNear(stockRoll * rollRatio, smoothedRoll);
-            if (Double.isNaN(smoothedRoll)) {
-                smoothedRoll = targetRoll;
-                ROLL_VEL[0] = 0.0D;
-            } else {
-                double rollLag = ClientConfig.CAMERA_LAG_ROLL.get() / agility;
-                smoothedRoll = springStep(smoothedRoll, targetRoll, ROLL_VEL, rollLag, springDamping, 1080.0D, dt);
-            }
-            // 事件里的 roll 是绝对角度，等价角用 wrap 收回到 [-180,180]，避免叠加出 360°。
-            double cameraRollOffset = Mth.wrapDegrees(smoothedRoll - stockRoll);
-            event.setRoll((float) cameraRollOffset);
-            lastCamRoll = cameraRollOffset;
-            lastStockRoll = stockRoll;
-        } else {
-            event.setRoll(0.0F);
-            lastCamRoll = 0.0D;
-            lastStockRoll = 0.0D;
-            smoothedRoll = Double.NaN;
-        }
-        lastFinalCameraYaw = finalYaw;
-
-        // 第三人称位置修正：横向居中 + 按速度后拉 + 位置弹簧滞后。
-        // 位置弹簧滞后：把“相机相对载具中心”的向量做时间平滑，载具转弯/滚转时相机机位会
-        // 绕机身滞后摆动（不是只转视角），观感更接近战地/三角洲的弹簧臂相机。
-        double distanceGain = ClientConfig.CAMERA_DISTANCE_GAIN.get() * preset.distanceScale;
-        double centerFactor = ClientConfig.CAMERA_CENTER_LATERAL.get();
-        double positionLag = fp ? 0.0D : ClientConfig.CAMERA_POSITION_LAG.get();
+        CENTERED_CHASE.apply(event, vehicle, seat, (float) event.getPartialTick(), viewMode);
+        offsetYaw = CENTERED_CHASE.getYawOffset();
+        offsetPitch = CENTERED_CHASE.getPitchOffset();
+        offsetPhase = OffsetPhase.NORMAL;
+        edgeBrakeState = 0.0D;
+        edgeSpeedScale = 1.0D;
+        lastCamYaw = event.getYaw();
+        lastCamPitch = event.getPitch();
+        lastCamRoll = event.getRoll();
+        lastStockRoll = 0.0D;
+        lastOrbitRoll = 0.0D;
         extraDistance = 0.0D;
-        if (!fp) {
-            Camera camera = mc.gameRenderer.getMainCamera();
-            Vec3 position = camera.getPosition();
-            double desiredX = position.x;
-            double desiredY = position.y;
-            double desiredZ = position.z;
-            boolean moved = false;
-
-            org.joml.Matrix4d transform = null;
-            org.joml.Vector4d origin = null;
-            try {
-                transform = vehicle.getClientVehicleTransform(partial);
-                origin = transform.transform(new org.joml.Vector4d(0.0D, 0.0D, 0.0D, 1.0D));
-            } catch (Throwable ignored) {
-                transform = null;
-                origin = null;
-            }
-
-            if (centerFactor > 0.0D && transform != null) {
-                // 用载具变换把相机位置换算到机体局部坐标，只把局部 x（横向偏移）按比例拉回 0。
-                // 这样压坡度/俯冲时都不会把垂直或前后分量误当横向，避免画面滑动/抖动。
-                try {
-                    org.joml.Matrix4d inverse = new org.joml.Matrix4d(transform).invert();
-                    org.joml.Vector4d local = inverse.transform(new org.joml.Vector4d(
-                            position.x, position.y, position.z, 1.0D));
-                    double originalX = local.x;
-                    local.x *= (1.0D - centerFactor);
-                    if (Math.abs(originalX) > 1.0E-3D) {
-                        org.joml.Vector4d world = transform.transform(local);
-                        desiredX = world.x;
-                        desiredY = world.y;
-                        desiredZ = world.z;
-                        moved = true;
-                    }
-                } catch (Throwable ignored) {
-                    // 变换不可用时保持原版机位
-                }
-            }
-
-            if (distanceGain > 0.0D) {
-                double speed = vehicle.getDeltaMovement().length();
-                double extra = Math.min(2.0D, speed * distanceGain * 0.5D) * adsScale;
-                if (extra > 0.01D) {
-                    double yawRad = Math.toRadians(baseYaw);
-                    double pitchRad = Math.toRadians(basePitch);
-                    double lookX = -Math.sin(yawRad) * Math.cos(pitchRad);
-                    double lookY = -Math.sin(pitchRad);
-                    double lookZ = Math.cos(yawRad) * Math.cos(pitchRad);
-                    desiredX -= lookX * extra;
-                    desiredY -= lookY * extra;
-                    desiredZ -= lookZ * extra;
-                    extraDistance = extra;
-                    moved = true;
-                }
-            }
-
-            if (origin != null && positionLag > 1.0E-4D) {
-                Vec3 center = new Vec3(origin.x, origin.y, origin.z);
-                Vec3 targetRel = new Vec3(desiredX, desiredY, desiredZ).subtract(center);
-                if (smoothedRel == null) {
-                    smoothedRel = targetRel;
-                    REL_X_VEL[0] = 0.0D;
-                    REL_Y_VEL[0] = 0.0D;
-                    REL_Z_VEL[0] = 0.0D;
-                } else {
-                    double springTime = positionLag / agility;
-                    smoothedRel = new Vec3(
-                            springStep(smoothedRel.x, targetRel.x, REL_X_VEL, springTime, springDamping, 12.0D, dt),
-                            springStep(smoothedRel.y, targetRel.y, REL_Y_VEL, springTime, springDamping, 8.0D, dt),
-                            springStep(smoothedRel.z, targetRel.z, REL_Z_VEL, springTime, springDamping, 12.0D, dt));
-                }
-                Vec3 result = center.add(smoothedRel);
-                desiredX = result.x;
-                desiredY = result.y;
-                desiredZ = result.z;
-                moved = true;
-            } else {
-                smoothedRel = null;
-            }
-
-            if (moved) {
-                CameraAccess.setPosition(camera, desiredX, desiredY, desiredZ);
-            }
-        } else {
-            smoothedRel = null;
-        }
+        lastApplied = true;
+        return;
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onComputeFov(ViewportEvent.ComputeFov event) {
-        Minecraft mc = Minecraft.getInstance();
-        LocalPlayer player = mc.player;
-        if (player == null || !ClientConfig.CAMERA_ENABLED.get()) {
-            return;
-        }
-        CameraPreset preset = ClientConfig.CAMERA_PRESET.get();
-        if (preset == CameraPreset.VANILLA) {
-            return;
-        }
-        if (!(player.getVehicle() instanceof VehicleEntity vehicle)) {
-            return;
-        }
-        VehicleType type = vehicle.getVehicleType();
-        if (type != VehicleType.AIRPLANE && type != VehicleType.HELICOPTER) {
-            return;
-        }
-        // 第一人称/右键瞄准的第一人称放大：使用第一人称自己的设置，不叠加第三人称速度 FOV。
-        if (mc.options.getCameraType() == CameraType.FIRST_PERSON || ClientEventHandler.zoomVehicle) {
-            return;
-        }
-        double speed = vehicle.getDeltaMovement().length();
-        double gain = ClientConfig.CAMERA_FOV_GAIN.get() * preset.fovScale;
-        if (ClientEventHandler.zoomVehicle) {
-            gain *= ClientConfig.CAMERA_ADS_SCALE.get();
-        }
-        double multiplier = 1.0D + gain * Math.min(1.0D, speed / 2.0D);
-        event.setFOV(event.getFOV() * multiplier);
+        // 视角接管不修改 FOV：第一人称/ADS/超速 FOV 全部保持卓越前线原生。
     }
 
     private static double alpha(double dt, double lagSeconds) {
@@ -373,6 +234,81 @@ public final class CameraHandler {
     }
 
     /**
+     * 两段式软阈值：第一阈值开始弹性压缩，第二阈值硬停止。
+     * 曲线在 T1 处一阶连续（导数 1），在 T2 处导数 0；超过 T2 直接钳制。
+     */
+    private static double twoStageLimit(double value, double soft, double hard) {
+        double t2 = Math.max(0.25D, hard);
+        double t1 = Mth.clamp(soft, 0.0D, t2 - 0.01D);
+        double abs = Math.abs(value);
+        if (abs <= t1) {
+            return value;
+        }
+        if (abs >= t2) {
+            return Math.copySign(t2, value);
+        }
+        double t = (abs - t1) / (t2 - t1);
+        double f = t + t * t - t * t * t;
+        return Math.copySign(t1 + (t2 - t1) * f, value);
+    }
+
+    /**
+     * 带两段缓冲区的弹簧：进入第一阈值后逐步增加阻尼并限制最大速度，
+     * 到第二阈值时硬钳制位置并清除向外速度。
+     */
+    private static double springStepLimited(double current, double target, double[] velocity,
+                                            double smoothTime, double dampingRatio, double maxSpeed,
+                                            double dt, double soft, double hard, double bufferDamping,
+                                            double recenterDamping) {
+        if (smoothTime <= 1.0E-4D || smoothTime < 0.02D) {
+            velocity[0] = 0.0D;
+            return target;
+        }
+        double t2 = Math.max(0.25D, hard);
+        double t1 = Mth.clamp(soft, 0.0D, t2 - 0.01D);
+        double ratio = Mth.clamp(dampingRatio, 0.5D, 1.5D);
+        double omega = 2.0D / smoothTime;
+        double stiffness = omega * omega;
+        double baseDamping = 2.0D * ratio * omega;
+        double extraGain = Mth.clamp(bufferDamping, 0.0D, 2.0D);
+        int steps = Mth.clamp((int) Math.ceil(dt / (1.0D / 120.0D)), 1, 12);
+        double h = Math.max(1.0E-4D, dt / steps);
+        double value = Mth.clamp(current, -t2, t2);
+        double v = velocity[0];
+        for (int i = 0; i < steps; i++) {
+            // 缓冲阻尼只在“向外推”时生效；回正时使用基础阻尼，
+            // 否则离开第一阈值后额外阻尼突然消失，会产生“快到中心时突然加速”的硬回正。
+            boolean outward = (value > 0.0D && v >= 0.0D) || (value < 0.0D && v <= 0.0D);
+            double edge = outward
+                    ? Mth.clamp((Math.abs(value) - t1) / (t2 - t1), 0.0D, 1.0D)
+                    : 0.0D;
+            double smooth = edge * edge * (3.0D - 2.0D * edge);
+            double localMaxSpeed = Math.max(0.01D, maxSpeed * (1.0D - 0.7D * smooth));
+            double damping = baseDamping + omega * extraGain * smooth;
+            // 回正末段：在中心附近、速度朝中心时增加阻尼，避免弹簧在 0 点速度最大造成硬碰。
+            boolean returning = value * v < 0.0D && Math.abs(value) < t1;
+            if (returning) {
+                double center = Mth.clamp(1.0D - Math.abs(value) / t1, 0.0D, 1.0D);
+                damping += omega * Mth.clamp(recenterDamping, 0.0D, 2.0D) * center;
+                localMaxSpeed *= (1.0D - 0.35D * center);
+            }
+            double accel = (target - value) * stiffness - v * damping;
+            v += accel * h;
+            v = Mth.clamp(v, -localMaxSpeed, localMaxSpeed);
+            value += v * h;
+            if (value > t2) {
+                value = t2;
+                v = Math.min(v, 0.0D);
+            } else if (value < -t2) {
+                value = -t2;
+                v = Math.max(v, 0.0D);
+            }
+        }
+        velocity[0] = v;
+        return value;
+    }
+
+    /**
      * 物理弹簧积分：固定子步长（120Hz）积分质量-弹簧-阻尼系统，避免低帧率时“一帧直接弹到目标”。
      *
      * <p>smoothTime 仍沿用原来的相机滞后参数语义：自然频率 omega = 2 / smoothTime。
@@ -380,6 +316,17 @@ public final class CameraHandler {
      */
     private static double springStep(double current, double target, double[] velocity,
                                      double smoothTime, double dampingRatio, double maxSpeed, double dt) {
+        return springStep(current, target, velocity, smoothTime, dampingRatio, maxSpeed, dt,
+                0.0D, 1.0D);
+    }
+
+    /**
+     * 带可选边缘制动参数的弹簧。
+     * extraDamping 只在外推动画里由边缘误差圆计算，回正/内收时为 0。
+     */
+    private static double springStep(double current, double target, double[] velocity,
+                                     double smoothTime, double dampingRatio, double maxSpeed,
+                                     double dt, double extraDamping, double maxSpeedScale) {
         if (smoothTime <= 1.0E-4D) {
             velocity[0] = 0.0D;
             return target;
@@ -392,7 +339,8 @@ public final class CameraHandler {
         double ratio = Mth.clamp(dampingRatio, 0.5D, 1.5D);
         double omega = 2.0D / smoothTime;
         double stiffness = omega * omega;
-        double damping = 2.0D * ratio * omega;
+        double damping = 2.0D * ratio * omega + Math.max(0.0D, extraDamping);
+        double speedLimit = Math.max(0.01D, maxSpeed * Mth.clamp(maxSpeedScale, 0.05D, 1.0D));
         int steps = Mth.clamp((int) Math.ceil(dt / (1.0D / 120.0D)), 1, 12);
         double h = Math.max(1.0E-4D, dt / steps);
         double value = current;
@@ -400,16 +348,77 @@ public final class CameraHandler {
         for (int i = 0; i < steps; i++) {
             double accel = (target - value) * stiffness - v * damping;
             v += accel * h;
-            v = Mth.clamp(v, -maxSpeed, maxSpeed);
+            v = Mth.clamp(v, -speedLimit, speedLimit);
             value += v * h;
         }
         velocity[0] = v;
         return value;
     }
 
+    /**
+     * 完全刚性 Sticky：不做动态偏移、不做弹簧、不做位置滞后。
+     * 只把相机 roll 直接设成机体 roll，并把机位绕机体纵轴刚性旋转。
+     */
+    private static void applyRigidSticky(ViewportEvent.ComputeCameraAngles event,
+                                        VehicleEntity vehicle, int seat, float partial) {
+        double camYaw = event.getYaw();
+        double camPitch = event.getPitch();
+        double stockRoll = unwrapNear(stockCameraRoll(vehicle, seat, partial, camYaw), lastStockRoll);
+        double bodyRoll = unwrapNear(vehicle.getRoll(partial), stockRoll);
+        int mode = ClientConfig.CAMERA_STICKY_ROLL_MODE.get();
+        double eventRoll = switch (mode) {
+            case 0 -> bodyRoll - stockRoll;
+            case 2 -> stockRoll - bodyRoll;
+            case 3 -> -bodyRoll;
+            default -> bodyRoll;
+        };
+        eventRoll = Mth.wrapDegrees(eventRoll);
+        event.setRoll((float) eventRoll);
+
+        offsetYaw = 0.0D;
+        offsetPitch = 0.0D;
+        OFFSET_YAW_VEL[0] = 0.0D;
+        OFFSET_PITCH_VEL[0] = 0.0D;
+        OFFSET_CONTROLLER.reset();
+        edgeBrakeState = 0.0D;
+        edgeSpeedScale = 1.0D;
+        edgeBrakeLatched = false;
+        offsetPhase = OffsetPhase.NORMAL;
+        smoothedRoll = bodyRoll;
+        ROLL_VEL[0] = 0.0D;
+        orbitRoll = bodyRoll;
+        ORBIT_VEL[0] = 0.0D;
+        smoothedRel = null;
+        lastAgility = 1.0D;
+        lastActivity = 0.0D;
+        lastCamYaw = camYaw;
+        lastCamPitch = camPitch;
+        lastCamRoll = eventRoll;
+        lastStockRoll = stockRoll;
+        lastOrbitRoll = bodyRoll;
+        lastFinalCameraYaw = camYaw;
+        lastApplied = true;
+
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            Camera camera = mc.gameRenderer.getMainCamera();
+            Vec3 position = camera.getPosition();
+            org.joml.Matrix4d transform = vehicle.getClientVehicleTransform(partial);
+            org.joml.Matrix4d inverse = new org.joml.Matrix4d(transform).invert();
+            org.joml.Vector4d local = inverse.transform(new org.joml.Vector4d(
+                    position.x, position.y, position.z, 1.0D));
+            org.joml.Vector4d rotated = new org.joml.Matrix4d()
+                    .rotateZ(Math.toRadians(bodyRoll))
+                    .transform(local);
+            org.joml.Vector4d world = transform.transform(rotated);
+            CameraAccess.setPosition(camera, world.x, world.y, world.z);
+        } catch (Throwable ignored) {
+            // 刚性模式是视觉功能，变换失败时保留 SW 原机位。
+        }
+    }
+
     /** 复刻卓越前线 GameRendererMixin 加到 pose stack 上的滚转量（度）。 */
-    private static double stockCameraRoll(VehicleEntity vehicle, int seat, float partial, double camYaw) {
-        double bodyYaw = Mth.lerp(partial, vehicle.yRotO, vehicle.getYRot());
+    private static double stockCameraRoll(VehicleEntity vehicle, int seat, float partial, double camYaw) {        double bodyYaw = Mth.lerp(partial, vehicle.yRotO, vehicle.getYRot());
         double angle = Mth.wrapDegrees(camYaw - bodyYaw);
         java.util.List<SeatInfo> seats = VehicleData.compute(vehicle).seats();
         if (seat < 0 || seat >= seats.size()) {
@@ -431,12 +440,43 @@ public final class CameraHandler {
         return -r * vehicle.getRoll(partial) - r2 * vehicle.getViewXRot(partial);
     }
 
+    private static void cancelRecenter() {
+        recenterActive = false;
+        recenterHoldActive = false;
+        recenterNeutralTime = 0.0D;
+        // 回正动画产生的速度不能交给弹簧继续使用，否则会先继续回正再反向。
+        OFFSET_YAW_VEL[0] = 0.0D;
+        OFFSET_PITCH_VEL[0] = 0.0D;
+    }
+
     private static void resetTrack() {
         trackedVehicleId = -1;
         offsetYaw = 0.0D;
         offsetPitch = 0.0D;
+        recenterActive = false;
+        recenterHoldActive = false;
+        recenterNeutralTime = 0.0D;
+        recenterWasEnabled = true;
+        edgeBrakeState = 0.0D;
+        edgeSpeedScale = 1.0D;
+        edgeBrakeLatched = false;
+        offsetPhase = OffsetPhase.NORMAL;
+        OFFSET_CONTROLLER.reset();
+        offsetEngineWasV2 = true;
+        DYNAMIC_ENGINE.reset();
+        CENTERED_CHASE.reset();
+        dynamicEngineWasV3 = true;
+        recenterStartRadius = 0.0D;
+        recenterAngle = 0.0D;
+        recenterElapsed = 0.0D;
+        recenterHoldElapsed = 0.0D;
+        recenterHoldYaw = 0.0D;
+        recenterHoldPitch = 0.0D;
         extraDistance = 0.0D;
         smoothedRoll = Double.NaN;
+        orbitRoll = Double.NaN;
+        ORBIT_VEL[0] = 0.0D;
+        lastOrbitRoll = 0.0D;
         smoothedYawRate = 0.0D;
         smoothedPitchRate = 0.0D;
         smoothedRollRate = 0.0D;
@@ -468,6 +508,18 @@ public final class CameraHandler {
         return offsetPitch;
     }
 
+    public static OffsetPhase getOffsetPhase() {
+        return offsetPhase;
+    }
+
+    public static double getEdgeBrakeState() {
+        return edgeBrakeState;
+    }
+
+    public static double getEdgeSpeedScale() {
+        return edgeSpeedScale;
+    }
+
     public static double getExtraDistance() {
         return extraDistance;
     }
@@ -486,6 +538,22 @@ public final class CameraHandler {
 
     public static double getLastStockRoll() {
         return lastStockRoll;
+    }
+
+    public static double getLastOrbitRoll() {
+        return lastOrbitRoll;
+    }
+
+    public static boolean isLastHelicopter() {
+        return lastHelicopter;
+    }
+
+    public static boolean isRollFollowEnabled() {
+        return lastRollFollowEnabled;
+    }
+
+    public static double getRollCoupling() {
+        return lastRollCoupling;
     }
 
     public static double getAgility() {

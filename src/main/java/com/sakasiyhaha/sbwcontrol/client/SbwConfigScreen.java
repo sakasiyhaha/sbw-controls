@@ -1,6 +1,11 @@
 package com.sakasiyhaha.sbwcontrol.client;
 
-import com.sakasiyhaha.sbwcontrol.camera.CameraPreset;
+import com.sakasiyhaha.sbwcontrol.camera.dynamic.CameraDistanceController;
+import com.sakasiyhaha.sbwcontrol.camera.view.CameraAimMode;
+import com.sakasiyhaha.sbwcontrol.camera.view.CameraDistanceMode;
+import com.sakasiyhaha.sbwcontrol.camera.view.CameraViewMode;
+import com.sakasiyhaha.sbwcontrol.camera.view.FixedWingCameraBackend;
+import com.sakasiyhaha.sbwcontrol.camera.view.VehicleViewMode;
 import com.sakasiyhaha.sbwcontrol.client.widget.ConfigSlider;
 import com.sakasiyhaha.sbwcontrol.client.widget.EnumButton;
 import com.sakasiyhaha.sbwcontrol.config.ClientConfig;
@@ -24,11 +29,14 @@ import java.util.function.Consumer;
 import java.util.function.DoubleFunction;
 
 /**
- * 统一设置窗口：控制 / 相机 / 操作 / 服务端 / 诊断。
+ * 重置后的统一设置窗口。
  *
- * <p>所有参数只在这里出现一次；相机内部再分 基础 / 动态 / 第一人称·准星 三个子页。
- * 按键不在本模组内单独做页：9 个快捷键已注册到原版“选项 → 控制 → 按键绑定”，
- * 这里只提供入口和恢复默认。
+ * <p>主菜单只保留：
+ * 载具控制 / 相机 / 输入手感 / 服务端 / 诊断。
+ *
+ * <p>相机页只保留当前正交相机：
+ * 基础居中开关、YawChannel、RollChannel。
+ * 旧的回正、误差圆、Sticky、V2/V3 等 UI 全部移除。
  */
 @OnlyIn(Dist.CLIENT)
 public final class SbwConfigScreen extends AbstractSbwScreen {
@@ -47,20 +55,20 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
         }
     }
 
-    private enum CameraTab {
-        BASE("base"),
-        DYNAMICS("dynamics"),
-        FIRST_PERSON("first_person");
+    private enum ViewTab {
+        MODE("mode"),
+        DYNAMIC("dynamic"),
+        DISTANCE("distance");
 
         final String key;
 
-        CameraTab(String key) {
+        ViewTab(String key) {
             this.key = key;
         }
     }
 
     private Tab tab = Tab.CONTROL;
-    private CameraTab cameraTab = CameraTab.BASE;
+    private ViewTab viewTab = ViewTab.MODE;
     private EnumButton<ControlScheme> aircraftSchemeButton;
     private EnumButton<ControlScheme> helicopterSchemeButton;
     private EnumButton<AxisSource> customPitchButton;
@@ -79,11 +87,11 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
         rebuildWidgets();
     }
 
-    private void switchCameraTab(CameraTab target) {
-        if (cameraTab == target) {
+    private void switchViewTab(ViewTab target) {
+        if (viewTab == target) {
             return;
         }
-        cameraTab = target;
+        viewTab = target;
         rebuildWidgets();
     }
 
@@ -94,8 +102,9 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
         customPitchButton = null;
         customRollButton = null;
         customYawButton = null;
+
         int cx = width / 2;
-        int tabW = 58;
+        int tabW = 70;
         int gap = 4;
         int total = Tab.values().length * tabW + (Tab.values().length - 1) * gap;
         int tabX = cx - total / 2;
@@ -111,27 +120,27 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
 
         int contentTop = 56;
         if (tab == Tab.CAMERA) {
-            int camW = 68;
-            int camGap = 4;
-            int camTotal = CameraTab.values().length * camW + (CameraTab.values().length - 1) * camGap;
-            int camX = cx - camTotal / 2;
-            int camY = 49;
-            for (CameraTab value : CameraTab.values()) {
-                final CameraTab target = value;
-                Button button = Button.builder(Component.translatable(
-                                "screen.sbwcontrol.camtab." + value.key),
-                        b -> switchCameraTab(target)).bounds(camX, camY, camW, 18).build();
-                button.active = cameraTab != target;
+            int subW = 80;
+            int subGap = 4;
+            int subTotal = ViewTab.values().length * subW + (ViewTab.values().length - 1) * subGap;
+            int subX = cx - subTotal / 2;
+            int subY = 49;
+            for (ViewTab value : ViewTab.values()) {
+                final ViewTab target = value;
+                Button button = Button.builder(
+                                Component.translatable("screen.sbwcontrol.viewtab." + value.key),
+                                b -> switchViewTab(target))
+                        .bounds(subX, subY, subW, 18).build();
+                button.active = viewTab != target;
                 addRenderableWidget(button);
-                camX += camW + camGap;
+                subX += subW + subGap;
             }
             contentTop = 74;
         }
-
         switch (tab) {
             case CONTROL -> buildControl(cx);
             case CAMERA -> buildCamera(cx, contentTop);
-            case OPERATION -> buildOperation(cx, contentTop);
+            case OPERATION -> buildInput(cx, contentTop);
             case SERVER -> buildServer(cx, contentTop);
             case DIAGNOSTICS -> buildDiagnostics(cx, contentTop);
         }
@@ -155,156 +164,204 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
                 ClientConfig.AIRCRAFT_SCHEME.get(), ControlScheme.values(),
                 ClientConfig.AIRCRAFT_SCHEME::set, SbwConfigScreen::schemeName);
         addRenderableWidget(aircraftSchemeButton);
+
         helicopterSchemeButton = new EnumButton<>(left, row + step, w, 20,
                 Component.translatable("screen.sbwcontrol.helicopter_default"),
                 ClientConfig.HELICOPTER_SCHEME.get(), ControlScheme.values(),
                 ClientConfig.HELICOPTER_SCHEME::set, SbwConfigScreen::schemeName);
         addRenderableWidget(helicopterSchemeButton);
 
-        Button other = Button.builder(Component.translatable("screen.sbwcontrol.other_vehicles"), b -> {
-        }).bounds(left, row + step * 2, w, 20).build();
-        other.active = false;
-        addRenderableWidget(other);
-
-        boolean custom = ClientConfig.AIRCRAFT_SCHEME.get() == ControlScheme.CUSTOM
-                || ClientConfig.HELICOPTER_SCHEME.get() == ControlScheme.CUSTOM;
-        customPitchButton = new EnumButton<>(left, row + step * 3, w, 20,
+        customPitchButton = new EnumButton<>(right, row, w, 20,
                 Component.translatable("screen.sbwcontrol.custom_pitch"),
                 ClientConfig.CUSTOM_PITCH_SOURCE.get(), AxisSource.values(),
                 ClientConfig.CUSTOM_PITCH_SOURCE::set, SbwConfigScreen::axisName);
-        customPitchButton.active = custom;
         addRenderableWidget(customPitchButton);
-        customRollButton = new EnumButton<>(left, row + step * 4, w, 20,
+
+        customRollButton = new EnumButton<>(right, row + step, w, 20,
                 Component.translatable("screen.sbwcontrol.custom_roll"),
                 ClientConfig.CUSTOM_ROLL_SOURCE.get(), AxisSource.values(),
                 ClientConfig.CUSTOM_ROLL_SOURCE::set, SbwConfigScreen::axisName);
-        customRollButton.active = custom;
         addRenderableWidget(customRollButton);
-        customYawButton = new EnumButton<>(left, row + step * 5, w, 20,
+
+        customYawButton = new EnumButton<>(right, row + step * 2, w, 20,
                 Component.translatable("screen.sbwcontrol.custom_yaw"),
                 ClientConfig.CUSTOM_YAW_SOURCE.get(), AxisSource.values(),
                 ClientConfig.CUSTOM_YAW_SOURCE::set, SbwConfigScreen::axisName);
-        customYawButton.active = custom;
         addRenderableWidget(customYawButton);
-    }
 
-    @Override
-    public void tick() {
-        super.tick();
-        // B 键/命令/TOML 改动后，设置页同步显示；反之设置页修改也会被 B 键从同一配置读走。
-        if (aircraftSchemeButton != null) {
-            aircraftSchemeButton.setCurrent(ClientConfig.AIRCRAFT_SCHEME.get());
-        }
-        if (helicopterSchemeButton != null) {
-            helicopterSchemeButton.setCurrent(ClientConfig.HELICOPTER_SCHEME.get());
-        }
-        boolean custom = ClientConfig.AIRCRAFT_SCHEME.get() == ControlScheme.CUSTOM
-                || ClientConfig.HELICOPTER_SCHEME.get() == ControlScheme.CUSTOM;
-        if (customPitchButton != null) {
-            customPitchButton.active = custom;
-            customRollButton.active = custom;
-            customYawButton.active = custom;
-        }
+        addRenderableWidget(Button.builder(Component.translatable("screen.sbwcontrol.open_keys"), b -> {
+            if (minecraft != null) {
+                minecraft.setScreen(new KeyBindsScreen(this, minecraft.options));
+            }
+        }).bounds(right, row + step * 3, w, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("screen.sbwcontrol.reset_keys"),
+                b -> resetKeybinds()).bounds(right, row + step * 4, w, 20).build());
+
+        addRenderableWidget(toggle(left, row + step * 2, w, "screen.sbwcontrol.invert_pitch",
+                ClientConfig.INVERT_PITCH::get, ClientConfig.INVERT_PITCH::set));
+        addRenderableWidget(toggle(left, row + step * 3, w, "screen.sbwcontrol.invert_roll",
+                ClientConfig.INVERT_ROLL::get, ClientConfig.INVERT_ROLL::set));
+        addRenderableWidget(toggle(left, row + step * 4, w, "screen.sbwcontrol.invert_yaw",
+                ClientConfig.INVERT_YAW::get, ClientConfig.INVERT_YAW::set));
+        addRenderableWidget(toggle(left, row + step * 5, w, "screen.sbwcontrol.invert_mouse_y",
+                ClientConfig.INVERT_MOUSE_Y::get, ClientConfig.INVERT_MOUSE_Y::set));
     }
 
     private void buildCamera(int cx, int row) {
+        switch (viewTab) {
+            case MODE -> buildViewMode(cx, row);
+            case DYNAMIC -> buildViewDynamic(cx, row);
+            case DISTANCE -> buildViewDistance(cx, row);
+        }
+    }
+
+    private void buildViewMode(int cx, int row) {
         int left = cx - 155;
         int right = cx + 5;
         int w = 150;
         int step = 20;
 
-        switch (cameraTab) {
-            case BASE -> {
-                addRenderableWidget(toggle(left, row, w, "screen.sbwcontrol.camera",
-                        ClientConfig.CAMERA_ENABLED::get, ClientConfig.CAMERA_ENABLED::set));
-                addRenderableWidget(new EnumButton<>(left, row + step, w, 20,
-                        Component.translatable("screen.sbwcontrol.camera_preset"),
-                        ClientConfig.CAMERA_PRESET.get(), CameraPreset.values(),
-                        ClientConfig.CAMERA_PRESET::set, SbwConfigScreen::presetName));
-                addRenderableWidget(slider(left, row + step * 2, w, "screen.sbwcontrol.lag_yaw",
-                        0.0, 1.0, ClientConfig.CAMERA_LAG_YAW.get(),
-                        ClientConfig.CAMERA_LAG_YAW::set, sec()));
-                addRenderableWidget(slider(left, row + step * 3, w, "screen.sbwcontrol.lag_pitch",
-                        0.0, 1.0, ClientConfig.CAMERA_LAG_PITCH.get(),
-                        ClientConfig.CAMERA_LAG_PITCH::set, sec()));
-                addRenderableWidget(slider(left, row + step * 4, w, "screen.sbwcontrol.lead",
-                        0.0, 0.6, ClientConfig.CAMERA_LEAD.get(),
-                        ClientConfig.CAMERA_LEAD::set, sec()));
+        addRenderableWidget(new EnumButton<>(left, row, w, 20,
+                Component.translatable("screen.sbwcontrol.global_tps_view"),
+                ClientConfig.CAMERA_GLOBAL_VIEW_MODE.get(), CameraViewMode.values(),
+                ClientConfig.CAMERA_GLOBAL_VIEW_MODE::set, SbwConfigScreen::viewModeName));
 
-                addRenderableWidget(slider(right, row, w, "screen.sbwcontrol.fov_gain",
-                        0.0, 0.5, ClientConfig.CAMERA_FOV_GAIN.get(),
-                        ClientConfig.CAMERA_FOV_GAIN::set, num()));
-                addRenderableWidget(slider(right, row + step, w, "screen.sbwcontrol.distance_gain",
-                        0.0, 2.0, ClientConfig.CAMERA_DISTANCE_GAIN.get(),
-                        ClientConfig.CAMERA_DISTANCE_GAIN::set, num()));
-                addRenderableWidget(slider(right, row + step * 2, w, "screen.sbwcontrol.camera_ads",
-                        0.0, 1.0, ClientConfig.CAMERA_ADS_SCALE.get(),
-                        ClientConfig.CAMERA_ADS_SCALE::set, num()));
-                addRenderableWidget(slider(right, row + step * 3, w, "screen.sbwcontrol.camera_roll_ratio",
-                        0.0, 1.5, ClientConfig.CAMERA_ROLL_RATIO.get(),
-                        ClientConfig.CAMERA_ROLL_RATIO::set, num()));
-                addRenderableWidget(slider(right, row + step * 4, w, "screen.sbwcontrol.center_lateral",
-                        0.0, 1.0, ClientConfig.CAMERA_CENTER_LATERAL.get(),
-                        ClientConfig.CAMERA_CENTER_LATERAL::set, num()));
-            }
-            case DYNAMICS -> {
-                addRenderableWidget(toggle(left, row, w, "screen.sbwcontrol.turn_lag_invert",
-                        ClientConfig.CAMERA_TURN_LAG_INVERT::get, ClientConfig.CAMERA_TURN_LAG_INVERT::set));
-                addRenderableWidget(toggle(left, row + step, w, "screen.sbwcontrol.turn_lag_invert_pitch",
-                        ClientConfig.CAMERA_TURN_LAG_INVERT_PITCH::get, ClientConfig.CAMERA_TURN_LAG_INVERT_PITCH::set));
-                addRenderableWidget(slider(left, row + step * 2, w, "screen.sbwcontrol.roll_lag",
-                        0.0, 0.5, ClientConfig.CAMERA_LAG_ROLL.get(),
-                        ClientConfig.CAMERA_LAG_ROLL::set, sec()));
-                addRenderableWidget(slider(left, row + step * 3, w, "screen.sbwcontrol.position_lag",
-                        0.0, 0.3, ClientConfig.CAMERA_POSITION_LAG.get(),
-                        ClientConfig.CAMERA_POSITION_LAG::set, sec()));
-                addRenderableWidget(slider(left, row + step * 4, w, "screen.sbwcontrol.spring_damping",
-                        0.5, 1.5, ClientConfig.CAMERA_SPRING_DAMPING.get(),
-                        ClientConfig.CAMERA_SPRING_DAMPING::set, num()));
-                addRenderableWidget(slider(right, row, w, "screen.sbwcontrol.adaptive",
-                        0.0, 5.0, ClientConfig.CAMERA_ADAPTIVE_GAIN.get(),
-                        ClientConfig.CAMERA_ADAPTIVE_GAIN::set, num()));
-                addRenderableWidget(slider(right, row + step, w, "screen.sbwcontrol.rate_smoothing",
-                        0.0, 0.3, ClientConfig.CAMERA_RATE_SMOOTHING.get(),
-                        ClientConfig.CAMERA_RATE_SMOOTHING::set, sec()));
-                addRenderableWidget(slider(right, row + step * 2, w, "screen.sbwcontrol.soft_limit",
-                        0.0, 1.0, ClientConfig.CAMERA_SOFT_LIMIT.get(),
-                        ClientConfig.CAMERA_SOFT_LIMIT::set, num()));
-            }
-            case FIRST_PERSON -> {
-                addRenderableWidget(toggle(left, row, w, "screen.sbwcontrol.first_person",
-                        ClientConfig.CAMERA_FIRST_PERSON::get, ClientConfig.CAMERA_FIRST_PERSON::set));
-                addRenderableWidget(slider(left, row + step, w, "screen.sbwcontrol.fp_lag_yaw",
-                        0.0, 0.5, ClientConfig.CAMERA_FP_LAG_YAW.get(),
-                        ClientConfig.CAMERA_FP_LAG_YAW::set, sec()));
-                addRenderableWidget(slider(left, row + step * 2, w, "screen.sbwcontrol.fp_lag_pitch",
-                        0.0, 0.5, ClientConfig.CAMERA_FP_LAG_PITCH.get(),
-                        ClientConfig.CAMERA_FP_LAG_PITCH::set, sec()));
-                addRenderableWidget(slider(left, row + step * 3, w, "screen.sbwcontrol.fp_turn_lag",
-                        0.0, 0.3, ClientConfig.CAMERA_FP_TURN_LAG.get(),
-                        ClientConfig.CAMERA_FP_TURN_LAG::set, sec()));
-                addRenderableWidget(slider(left, row + step * 4, w, "screen.sbwcontrol.fp_roll_lag",
-                        0.0, 0.3, ClientConfig.CAMERA_FP_ROLL_LAG.get(),
-                        ClientConfig.CAMERA_FP_ROLL_LAG::set, sec()));
-                addRenderableWidget(slider(right, row, w, "screen.sbwcontrol.fp_position_lag",
-                        0.0, 0.2, ClientConfig.CAMERA_FP_POSITION_LAG.get(),
-                        ClientConfig.CAMERA_FP_POSITION_LAG::set, sec()));
-                addRenderableWidget(slider(right, row + step, w, "screen.sbwcontrol.fp_adaptive",
-                        0.0, 3.0, ClientConfig.CAMERA_FP_ADAPTIVE_GAIN.get(),
-                        ClientConfig.CAMERA_FP_ADAPTIVE_GAIN::set, num()));
-                addRenderableWidget(toggle(right, row + step * 2, w, "screen.sbwcontrol.nose_marker",
-                        ClientConfig.CAMERA_NOSE_MARKER::get, ClientConfig.CAMERA_NOSE_MARKER::set));
-                addRenderableWidget(toggle(right, row + step * 3, w, "screen.sbwcontrol.replace_crosshair",
-                        ClientConfig.CAMERA_REPLACE_CROSSHAIR::get, ClientConfig.CAMERA_REPLACE_CROSSHAIR::set));
-            }
-        }
+        addRenderableWidget(new EnumButton<>(left, row + step, w, 20,
+                Component.translatable("screen.sbwcontrol.airplane_tps_view"),
+                ClientConfig.CAMERA_AIRPLANE_VIEW_MODE.get(), VehicleViewMode.values(),
+                ClientConfig.CAMERA_AIRPLANE_VIEW_MODE::set, SbwConfigScreen::vehicleViewModeName));
+
+        addRenderableWidget(new EnumButton<>(left, row + step * 2, w, 20,
+                Component.translatable("screen.sbwcontrol.helicopter_tps_view"),
+                ClientConfig.CAMERA_HELICOPTER_VIEW_MODE.get(), VehicleViewMode.values(),
+                ClientConfig.CAMERA_HELICOPTER_VIEW_MODE::set, SbwConfigScreen::vehicleViewModeName));
+
+        addRenderableWidget(new EnumButton<>(left, row + step * 3, w, 20,
+                Component.translatable("screen.sbwcontrol.fixed_wing_backend"),
+                ClientConfig.CAMERA_FIXED_WING_BACKEND.get(), FixedWingCameraBackend.values(),
+                ClientConfig.CAMERA_FIXED_WING_BACKEND::set, SbwConfigScreen::fixedWingBackendName));
+
+        addRenderableWidget(toggle(right, row, w, "screen.sbwcontrol.follow_hard_rotation",
+                ClientConfig.CAMERA_FOLLOW_HARD_ROTATION::get,
+                ClientConfig.CAMERA_FOLLOW_HARD_ROTATION::set));
+        addRenderableWidget(slider(right, row + step, w, "screen.sbwcontrol.hard_follow_height",
+                0.0D, 6.0D, ClientConfig.CAMERA_HARD_FOLLOW_HEIGHT.get(),
+                ClientConfig.CAMERA_HARD_FOLLOW_HEIGHT::set, metric()));
+
+        addRenderableWidget(new EnumButton<>(right, row + step * 2, w, 20,
+                Component.translatable("screen.sbwcontrol.aim_mode"),
+                ClientConfig.CAMERA_AIM_MODE.get(), CameraAimMode.values(),
+                ClientConfig.CAMERA_AIM_MODE::set, SbwConfigScreen::aimModeName));
+
+        addRenderableWidget(slider(right, row + step * 3, w, "screen.sbwcontrol.fixed_wing_distance",
+                4.0D, 80.0D, ClientConfig.CAMERA_FIXED_WING_DISTANCE.get(),
+                ClientConfig.CAMERA_FIXED_WING_DISTANCE::set, metric()));
+        addRenderableWidget(slider(right, row + step * 4, w, "screen.sbwcontrol.fixed_wing_height",
+                0.0D, 12.0D, ClientConfig.CAMERA_FIXED_WING_HEIGHT.get(),
+                ClientConfig.CAMERA_FIXED_WING_HEIGHT::set, metric()));
     }
 
-    private void buildOperation(int cx, int row) {
+    private void buildViewDynamic(int cx, int row) {
         int left = cx - 155;
         int right = cx + 5;
         int w = 150;
-        int step = 19;
+        int step = 20;
+        boolean enabled = hasDynamicView();
+
+        addRenderableWidget(disableIf(slider(left, row, w, "screen.sbwcontrol.channel_yaw_gain",
+                -8.0D, 8.0D, ClientConfig.CAMERA_CHANNEL_YAW_GAIN.get(),
+                ClientConfig.CAMERA_CHANNEL_YAW_GAIN::set, deg()), !enabled));
+        addRenderableWidget(disableIf(slider(left, row + step, w, "screen.sbwcontrol.channel_yaw_lag",
+                0.0D, 0.5D, ClientConfig.CAMERA_CHANNEL_YAW_LAG.get(),
+                ClientConfig.CAMERA_CHANNEL_YAW_LAG::set, sec()), !enabled));
+        addRenderableWidget(disableIf(slider(left, row + step * 2, w, "screen.sbwcontrol.channel_pitch_gain",
+                -8.0D, 8.0D, ClientConfig.CAMERA_CHANNEL_PITCH_GAIN.get(),
+                ClientConfig.CAMERA_CHANNEL_PITCH_GAIN::set, deg()), !enabled));
+        addRenderableWidget(disableIf(slider(left, row + step * 3, w, "screen.sbwcontrol.channel_pitch_lag",
+                0.0D, 0.5D, ClientConfig.CAMERA_CHANNEL_PITCH_LAG.get(),
+                ClientConfig.CAMERA_CHANNEL_PITCH_LAG::set, sec()), !enabled));
+        addRenderableWidget(disableIf(slider(left, row + step * 4, w, "screen.sbwcontrol.spring_damping",
+                0.5D, 1.5D, ClientConfig.CAMERA_SPRING_DAMPING.get(),
+                ClientConfig.CAMERA_SPRING_DAMPING::set, num()), !enabled));
+
+        addRenderableWidget(disableIf(slider(right, row, w, "screen.sbwcontrol.channel_roll_gain",
+                -8.0D, 8.0D, ClientConfig.CAMERA_CHANNEL_ROLL_GAIN.get(),
+                ClientConfig.CAMERA_CHANNEL_ROLL_GAIN::set, deg()), !enabled));
+        addRenderableWidget(disableIf(slider(right, row + step, w, "screen.sbwcontrol.channel_roll_lag",
+                0.0D, 0.5D, ClientConfig.CAMERA_CHANNEL_ROLL_LAG.get(),
+                ClientConfig.CAMERA_CHANNEL_ROLL_LAG::set, sec()), !enabled));
+        addRenderableWidget(disableIf(toggle(right, row + step * 2, w, "screen.sbwcontrol.camera_invert_yaw",
+                ClientConfig.CAMERA_INVERT_YAW::get, ClientConfig.CAMERA_INVERT_YAW::set), !enabled));
+        addRenderableWidget(disableIf(toggle(right, row + step * 3, w, "screen.sbwcontrol.camera_invert_roll",
+                ClientConfig.CAMERA_INVERT_ROLL::get, ClientConfig.CAMERA_INVERT_ROLL::set), !enabled));
+        addRenderableWidget(disableIf(toggle(right, row + step * 4, w, "screen.sbwcontrol.camera_invert_pitch",
+                ClientConfig.CAMERA_INVERT_PITCH::get, ClientConfig.CAMERA_INVERT_PITCH::set), !enabled));
+    }
+
+    private void buildViewDistance(int cx, int row) {
+        int left = cx - 155;
+        int right = cx + 5;
+        int w = 150;
+        int step = 20;
+        boolean enabled = hasCenteredView();
+        boolean extra = ClientConfig.CAMERA_DISTANCE_MODE.get() == CameraDistanceMode.EXTRA;
+
+        addRenderableWidget(disableIf(new EnumButton<>(left, row, w, 20,
+                Component.translatable("screen.sbwcontrol.distance_mode"),
+                ClientConfig.CAMERA_DISTANCE_MODE.get(), CameraDistanceMode.values(),
+                value -> {
+                    ClientConfig.CAMERA_DISTANCE_MODE.set(value);
+                    rebuildWidgets();
+                }, SbwConfigScreen::distanceModeName), !enabled));
+
+        addRenderableWidget(disableIf(slider(left, row + step, w,
+                extra ? "screen.sbwcontrol.airplane_distance_extra" : "screen.sbwcontrol.airplane_distance_total",
+                extra ? 0.0D : 4.0D, extra ? 30.0D : 80.0D,
+                extra ? ClientConfig.CAMERA_AIRPLANE_DISTANCE_EXTRA.get()
+                        : ClientConfig.CAMERA_AIRPLANE_DISTANCE_TOTAL.get(),
+                extra ? ClientConfig.CAMERA_AIRPLANE_DISTANCE_EXTRA::set
+                        : ClientConfig.CAMERA_AIRPLANE_DISTANCE_TOTAL::set,
+                metric()), !enabled));
+
+        addRenderableWidget(disableIf(slider(left, row + step * 2, w,
+                extra ? "screen.sbwcontrol.helicopter_distance_extra" : "screen.sbwcontrol.helicopter_distance_total",
+                extra ? 0.0D : 4.0D, extra ? 30.0D : 80.0D,
+                extra ? ClientConfig.CAMERA_HELICOPTER_DISTANCE_EXTRA.get()
+                        : ClientConfig.CAMERA_HELICOPTER_DISTANCE_TOTAL.get(),
+                extra ? ClientConfig.CAMERA_HELICOPTER_DISTANCE_EXTRA::set
+                        : ClientConfig.CAMERA_HELICOPTER_DISTANCE_TOTAL::set,
+                metric()), !enabled));
+
+        addRenderableWidget(disableIf(toggle(left, row + step * 3, w, "screen.sbwcontrol.distance_collision",
+                ClientConfig.CAMERA_DISTANCE_COLLISION::get, ClientConfig.CAMERA_DISTANCE_COLLISION::set), !enabled));
+
+        addRenderableWidget(disableIf(slider(right, row, w, "screen.sbwcontrol.distance_smooth",
+                0.0D, 0.5D, ClientConfig.CAMERA_DISTANCE_SMOOTH.get(),
+                ClientConfig.CAMERA_DISTANCE_SMOOTH::set, sec()), !enabled));
+    }
+
+    private boolean hasDynamicView() {
+        CameraViewMode global = ClientConfig.CAMERA_GLOBAL_VIEW_MODE.get();
+        return ClientConfig.CAMERA_AIRPLANE_VIEW_MODE.get().resolve(global) == CameraViewMode.CENTERED_DYNAMIC
+                || ClientConfig.CAMERA_HELICOPTER_VIEW_MODE.get().resolve(global) == CameraViewMode.CENTERED_DYNAMIC;
+    }
+
+    private boolean hasCenteredView() {
+        CameraViewMode global = ClientConfig.CAMERA_GLOBAL_VIEW_MODE.get();
+        return ClientConfig.CAMERA_AIRPLANE_VIEW_MODE.get().resolve(global) != CameraViewMode.NATIVE
+                || ClientConfig.CAMERA_HELICOPTER_VIEW_MODE.get().resolve(global) != CameraViewMode.NATIVE;
+    }
+
+    private static <T extends net.minecraft.client.gui.components.AbstractWidget> T disableIf(T widget, boolean disabled) {
+        widget.active = !disabled;
+        return widget;
+    }
+
+    private void buildInput(int cx, int row) {
+        int left = cx - 155;
+        int right = cx + 5;
+        int w = 150;
+        int step = 20;
 
         addRenderableWidget(new EnumButton<>(left, row, w, 20,
                 Component.translatable("screen.sbwcontrol.input_mode"),
@@ -315,70 +372,49 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
                 value -> ClientConfig.MOUSE_SENSITIVITY.set((int) Math.round(value)),
                 value -> String.format("%.0f%%", value)));
         addRenderableWidget(slider(left, row + step * 2, w, "screen.sbwcontrol.smoothing",
-                0.0, 1.0, ClientConfig.SMOOTHING.get(),
-                ClientConfig.SMOOTHING::set, sec()));
+                0.0, 1.0, ClientConfig.SMOOTHING.get(), ClientConfig.SMOOTHING::set, sec()));
         addRenderableWidget(slider(left, row + step * 3, w, "screen.sbwcontrol.deadzone",
-                0.0, 0.5, ClientConfig.DEADZONE.get(),
-                ClientConfig.DEADZONE::set, num()));
+                0.0, 0.5, ClientConfig.DEADZONE.get(), ClientConfig.DEADZONE::set, num()));
         addRenderableWidget(slider(left, row + step * 4, w, "screen.sbwcontrol.pitch_gain",
-                0.1, 5.0, ClientConfig.PITCH_GAIN.get(),
-                ClientConfig.PITCH_GAIN::set, num()));
+                0.1, 5.0, ClientConfig.PITCH_GAIN.get(), ClientConfig.PITCH_GAIN::set, num()));
         addRenderableWidget(slider(left, row + step * 5, w, "screen.sbwcontrol.roll_gain",
-                0.1, 5.0, ClientConfig.ROLL_GAIN.get(),
-                ClientConfig.ROLL_GAIN::set, num()));
-        addRenderableWidget(slider(left, row + step * 6, w, "screen.sbwcontrol.yaw_gain",
-                0.1, 5.0, ClientConfig.YAW_GAIN.get(),
-                ClientConfig.YAW_GAIN::set, num()));
+                0.1, 5.0, ClientConfig.ROLL_GAIN.get(), ClientConfig.ROLL_GAIN::set, num()));
 
-        addRenderableWidget(slider(right, row, w, "screen.sbwcontrol.hybrid_mouse_yaw",
+        addRenderableWidget(slider(right, row, w, "screen.sbwcontrol.yaw_gain",
+                0.1, 5.0, ClientConfig.YAW_GAIN.get(), ClientConfig.YAW_GAIN::set, num()));
+        addRenderableWidget(slider(right, row + step, w, "screen.sbwcontrol.yaw_sensitivity",
+                0.0, 1.0, ClientConfig.YAW_SENSITIVITY.get(),
+                ClientConfig.YAW_SENSITIVITY::set, value -> String.format("%.0f%%", value * 100.0D)));
+        addRenderableWidget(slider(right, row + step * 2, w, "screen.sbwcontrol.hybrid_mouse_yaw",
                 0.0, 1.0, ClientConfig.HYBRID_MOUSE_YAW.get(),
                 ClientConfig.HYBRID_MOUSE_YAW::set, num()));
-        addRenderableWidget(slider(right, row + step, w, "screen.sbwcontrol.stick_center",
+        addRenderableWidget(slider(right, row + step * 3, w, "screen.sbwcontrol.stick_center",
                 0.0, 5.0, ClientConfig.STICK_CENTER_TIME.get(),
                 ClientConfig.STICK_CENTER_TIME::set, sec()));
-        addRenderableWidget(slider(right, row + step * 2, w, "screen.sbwcontrol.stick_gain",
-                0.1, 5.0, ClientConfig.STICK_GAIN.get(),
-                ClientConfig.STICK_GAIN::set, num()));
-        addRenderableWidget(toggle(right, row + step * 3, w, "screen.sbwcontrol.invert_pitch",
-                ClientConfig.INVERT_PITCH::get, ClientConfig.INVERT_PITCH::set));
-        addRenderableWidget(toggle(right, row + step * 4, w, "screen.sbwcontrol.invert_roll",
-                ClientConfig.INVERT_ROLL::get, ClientConfig.INVERT_ROLL::set));
-        addRenderableWidget(toggle(right, row + step * 5, w, "screen.sbwcontrol.invert_yaw",
-                ClientConfig.INVERT_YAW::get, ClientConfig.INVERT_YAW::set));
-        addRenderableWidget(toggle(right, row + step * 6, w, "screen.sbwcontrol.invert_mouse_y",
-                ClientConfig.INVERT_MOUSE_Y::get, ClientConfig.INVERT_MOUSE_Y::set));
-
-        addRenderableWidget(Button.builder(Component.translatable("screen.sbwcontrol.open_keys"), b -> {
-            if (minecraft != null) {
-                minecraft.setScreen(new KeyBindsScreen(this, minecraft.options));
-            }
-        }).bounds(left, row + step * 7, w, 20).build());
-        addRenderableWidget(Button.builder(Component.translatable("screen.sbwcontrol.reset_keys"),
-                b -> resetKeybinds()).bounds(right, row + step * 7, w, 20).build());
+        addRenderableWidget(slider(right, row + step * 4, w, "screen.sbwcontrol.stick_gain",
+                0.1, 5.0, ClientConfig.STICK_GAIN.get(), ClientConfig.STICK_GAIN::set, num()));
     }
 
     private void buildServer(int cx, int row) {
         int left = cx - 155;
         int right = cx + 5;
         int w = 150;
-        int step = 20;        boolean available = minecraft != null && minecraft.hasSingleplayerServer();
+        int step = 20;
+        boolean available = minecraft != null && minecraft.hasSingleplayerServer();
         if (!available) {
+            Button hint = Button.builder(Component.translatable("screen.sbwcontrol.server_only"), b -> {
+            }).bounds(left, row, w * 2 + 10, 20).build();
+            hint.active = false;
+            addRenderableWidget(hint);
             return;
         }
 
-        addRenderableWidget(slider(left, row, w, "screen.sbwcontrol.extra_yaw_rate",
-                0.0, 180.0, ServerConfig.EXTRA_YAW_RATE.get(),
-                ServerConfig.EXTRA_YAW_RATE::set, num()));
-        addRenderableWidget(slider(left, row + step, w, "screen.sbwcontrol.yaw_scale",
-                0.1, 64.0, ServerConfig.YAW_SCALE.get(),
-                ServerConfig.YAW_SCALE::set, num()));
-        addRenderableWidget(slider(left, row + step * 2, w, "screen.sbwcontrol.roll_scale",
-                0.01, 20.0, ServerConfig.ROLL_SCALE.get(),
-                ServerConfig.ROLL_SCALE::set, num()));
-        addRenderableWidget(slider(left, row + step * 3, w, "screen.sbwcontrol.pitch_scale",
-                0.1, 64.0, ServerConfig.PITCH_SCALE.get(),
-                ServerConfig.PITCH_SCALE::set, num()));
-        addRenderableWidget(slider(left, row + step * 4, w, "screen.sbwcontrol.input_timeout",
+        addRenderableWidget(slider(left, row, w, "screen.sbwcontrol.max_yaw_rate",
+                0.0, 180.0, ServerConfig.MAX_YAW_RATE.get(),
+                ServerConfig.MAX_YAW_RATE::set, value -> String.format("%.0f°/s", value)));
+        addRenderableWidget(slider(left, row + step, w, "screen.sbwcontrol.pitch_scale",
+                0.1, 64.0, ServerConfig.PITCH_SCALE.get(), ServerConfig.PITCH_SCALE::set, num()));
+        addRenderableWidget(slider(left, row + step * 2, w, "screen.sbwcontrol.input_timeout",
                 1, 100, ServerConfig.INPUT_TIMEOUT_TICKS.get(),
                 value -> ServerConfig.INPUT_TIMEOUT_TICKS.set((int) Math.round(value)),
                 value -> String.format("%.0f", value)));
@@ -399,7 +435,6 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
 
     private void buildDiagnostics(int cx, int row) {
         int left = cx - 155;
-        int right = cx + 5;
         int w = 150;
         int step = 20;
 
@@ -421,70 +456,68 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
                 ClientConfig.CUSTOM_PITCH_SOURCE.set(AxisSource.MOUSE_Y);
                 ClientConfig.CUSTOM_ROLL_SOURCE.set(AxisSource.MOUSE_X);
                 ClientConfig.CUSTOM_YAW_SOURCE.set(AxisSource.KEYS);
-                ClientConfig.SPEC.save();
-            }
-            case CAMERA -> {
-                switch (cameraTab) {
-                    case BASE -> {
-                        ClientConfig.CAMERA_ENABLED.set(true);
-                        ClientConfig.CAMERA_PRESET.set(CameraPreset.BATTLEFIELD);
-                        ClientConfig.CAMERA_LAG_YAW.set(0.10D);
-                        ClientConfig.CAMERA_LAG_PITCH.set(0.08D);
-                        ClientConfig.CAMERA_LEAD.set(0.22D);
-                        ClientConfig.CAMERA_FOV_GAIN.set(0.10D);
-                        ClientConfig.CAMERA_DISTANCE_GAIN.set(0.5D);
-                        ClientConfig.CAMERA_ADS_SCALE.set(0.35D);
-                        ClientConfig.CAMERA_ROLL_RATIO.set(1.0D);
-                        ClientConfig.CAMERA_CENTER_LATERAL.set(1.0D);
-                    }
-                    case DYNAMICS -> {
-                        ClientConfig.CAMERA_TURN_LAG_INVERT.set(false);
-                        ClientConfig.CAMERA_TURN_LAG_INVERT_PITCH.set(false);
-                        ClientConfig.CAMERA_LAG_ROLL.set(0.10D);
-                        ClientConfig.CAMERA_POSITION_LAG.set(0.08D);
-                        ClientConfig.CAMERA_SPRING_DAMPING.set(0.90D);
-                        ClientConfig.CAMERA_RATE_SMOOTHING.set(0.10D);
-                        ClientConfig.CAMERA_SOFT_LIMIT.set(1.0D);
-                        ClientConfig.CAMERA_ADAPTIVE_GAIN.set(1.5D);
-                    }
-                    case FIRST_PERSON -> {
-                        ClientConfig.CAMERA_FIRST_PERSON.set(false);
-                        ClientConfig.CAMERA_FP_LAG_YAW.set(0.03D);
-                        ClientConfig.CAMERA_FP_LAG_PITCH.set(0.03D);
-                        ClientConfig.CAMERA_FP_TURN_LAG.set(0.0D);
-                        ClientConfig.CAMERA_FP_ROLL_LAG.set(0.0D);
-                        ClientConfig.CAMERA_FP_POSITION_LAG.set(0.0D);
-                        ClientConfig.CAMERA_FP_ADAPTIVE_GAIN.set(0.0D);
-                        ClientConfig.CAMERA_NOSE_MARKER.set(false);
-                        ClientConfig.CAMERA_REPLACE_CROSSHAIR.set(false);
-                    }
-                }
-                ClientConfig.SPEC.save();
-            }
-            case OPERATION -> {
-                ClientConfig.INPUT_MODE.set(InputMode.STICK);
-                ClientConfig.STICK_CENTER_TIME.set(1.2D);
-                ClientConfig.STICK_GAIN.set(1.0D);
-                ClientConfig.MOUSE_SENSITIVITY.set(100);
-                ClientConfig.SMOOTHING.set(0.08D);
-                ClientConfig.DEADZONE.set(0.02D);
-                ClientConfig.PITCH_GAIN.set(1.0D);
-                ClientConfig.ROLL_GAIN.set(1.0D);
-                ClientConfig.YAW_GAIN.set(1.0D);
-                ClientConfig.HYBRID_MOUSE_YAW.set(0.25D);
                 ClientConfig.INVERT_PITCH.set(false);
                 ClientConfig.INVERT_ROLL.set(false);
                 ClientConfig.INVERT_YAW.set(false);
                 ClientConfig.INVERT_MOUSE_Y.set(false);
                 ClientConfig.SPEC.save();
             }
+            case CAMERA -> {
+                switch (viewTab) {
+                    case MODE -> {
+                        ClientConfig.CAMERA_GLOBAL_VIEW_MODE.set(CameraViewMode.CENTERED_DYNAMIC);
+                        ClientConfig.CAMERA_AIRPLANE_VIEW_MODE.set(VehicleViewMode.FOLLOW_GLOBAL);
+                        ClientConfig.CAMERA_HELICOPTER_VIEW_MODE.set(VehicleViewMode.FOLLOW_GLOBAL);
+                        ClientConfig.CAMERA_FOLLOW_HARD_ROTATION.set(true);
+                        ClientConfig.CAMERA_HARD_FOLLOW_HEIGHT.set(1.0D);
+                        ClientConfig.CAMERA_AIM_MODE.set(CameraAimMode.CENTER);
+                        ClientConfig.CAMERA_FIXED_WING_BACKEND.set(FixedWingCameraBackend.INDEPENDENT);
+                        ClientConfig.CAMERA_FIXED_WING_DISTANCE.set(18.0D);
+                        ClientConfig.CAMERA_FIXED_WING_HEIGHT.set(2.0D);
+                    }
+                    case DYNAMIC -> {
+                        ClientConfig.CAMERA_CHANNEL_YAW_GAIN.set(2.5D);
+                        ClientConfig.CAMERA_CHANNEL_YAW_LAG.set(0.12D);
+                        ClientConfig.CAMERA_CHANNEL_ROLL_GAIN.set(1.5D);
+                        ClientConfig.CAMERA_CHANNEL_ROLL_LAG.set(0.12D);
+                        ClientConfig.CAMERA_CHANNEL_PITCH_GAIN.set(1.0D);
+                        ClientConfig.CAMERA_CHANNEL_PITCH_LAG.set(0.12D);
+                        ClientConfig.CAMERA_INVERT_YAW.set(false);
+                        ClientConfig.CAMERA_INVERT_ROLL.set(false);
+                        ClientConfig.CAMERA_INVERT_PITCH.set(false);
+                        ClientConfig.CAMERA_SPRING_DAMPING.set(0.90D);
+                    }
+                    case DISTANCE -> {
+                        ClientConfig.CAMERA_DISTANCE_MODE.set(CameraDistanceMode.EXTRA);
+                        ClientConfig.CAMERA_AIRPLANE_DISTANCE_EXTRA.set(9.0D);
+                        ClientConfig.CAMERA_HELICOPTER_DISTANCE_EXTRA.set(3.0D);
+                        ClientConfig.CAMERA_AIRPLANE_DISTANCE_TOTAL.set(20.0D);
+                        ClientConfig.CAMERA_HELICOPTER_DISTANCE_TOTAL.set(12.0D);
+                        ClientConfig.CAMERA_DISTANCE_COLLISION.set(true);
+                        ClientConfig.CAMERA_DISTANCE_SMOOTH.set(0.12D);
+                    }
+                }
+                ClientConfig.SPEC.save();
+            }
+            case OPERATION -> {
+                ClientConfig.INPUT_MODE.set(InputMode.STICK);
+                ClientConfig.STICK_CENTER_TIME.set(0.60D);
+                ClientConfig.STICK_GAIN.set(1.0D);
+                ClientConfig.MOUSE_SENSITIVITY.set(100);
+                ClientConfig.SMOOTHING.set(0.04D);
+                ClientConfig.DEADZONE.set(0.02D);
+                ClientConfig.PITCH_GAIN.set(1.0D);
+                ClientConfig.ROLL_GAIN.set(1.0D);
+                ClientConfig.YAW_GAIN.set(1.0D);
+                ClientConfig.YAW_SENSITIVITY.set(0.7D);
+                ClientConfig.HYBRID_MOUSE_YAW.set(0.25D);
+                ClientConfig.SPEC.save();
+            }
             case SERVER -> {
                 if (minecraft == null || !minecraft.hasSingleplayerServer()) {
                     return;
                 }
-                ServerConfig.EXTRA_YAW_RATE.set(30.0D);
-                ServerConfig.YAW_SCALE.set(4.0D);
-                ServerConfig.ROLL_SCALE.set(6.0D);
+                ServerConfig.MAX_YAW_RATE.set(90.0D);
                 ServerConfig.PITCH_SCALE.set(20.0D);
                 ServerConfig.INPUT_TIMEOUT_TICKS.set(5);
                 ServerConfig.ALLOW_ROLL_BIRD.set(true);
@@ -546,6 +579,34 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
         return value -> String.format("%.2f", value);
     }
 
+    private static DoubleFunction<String> deg() {
+        return value -> String.format("%.1f°", value);
+    }
+
+    private static DoubleFunction<String> metric() {
+        return value -> String.format("%.1f格", value);
+    }
+
+    static Component viewModeName(CameraViewMode mode) {
+        return Component.translatable("screen.sbwcontrol.viewmode." + mode.name());
+    }
+
+    static Component vehicleViewModeName(VehicleViewMode mode) {
+        return Component.translatable("screen.sbwcontrol.vehicleviewmode." + mode.name());
+    }
+
+    static Component distanceModeName(CameraDistanceMode mode) {
+        return Component.translatable("screen.sbwcontrol.distancemode." + mode.name());
+    }
+
+    static Component aimModeName(CameraAimMode mode) {
+        return Component.translatable("screen.sbwcontrol.aimmode." + mode.name());
+    }
+
+    static Component fixedWingBackendName(FixedWingCameraBackend backend) {
+        return Component.translatable("screen.sbwcontrol.fixedwingbackend." + backend.name());
+    }
+
     static Component schemeName(ControlScheme scheme) {
         return Component.translatable("screen.sbwcontrol.scheme." + scheme.name());
     }
@@ -554,28 +615,38 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
         return Component.translatable("screen.sbwcontrol.axis." + source.name());
     }
 
-    static Component presetName(CameraPreset preset) {
-        return Component.translatable("screen.sbwcontrol.preset." + preset.name());
-    }
-
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
-        // 操作页底部两行用来放“打开原版按键设置/恢复默认按键”，不再画状态文字，避免遮按钮。
-        if (tab == Tab.OPERATION) {
-            return;
-        }
         boolean supported = ClientSupport.isSupported();
         Component server = Component.literal(supported
                 ? "server: supported (mask=0b" + Integer.toBinaryString(ClientSupport.allowedMask()) + ")"
                 : "server: NOT supported");
         int color = supported ? 0x55FF55 : 0xFF5555;
         graphics.drawCenteredString(font, server, width / 2, height - 56, color);
+
         if (tab == Tab.SERVER && (minecraft == null || !minecraft.hasSingleplayerServer())) {
             graphics.drawCenteredString(font, Component.translatable("screen.sbwcontrol.server_only"),
                     width / 2, height - 44, 0xFFAA55);
         } else if (tab == Tab.CONTROL) {
             graphics.drawCenteredString(font, Component.translatable("screen.sbwcontrol.control_hint"),
+                    width / 2, height - 44, 0xA0A0A0);
+        } else if (tab == Tab.CAMERA) {
+            CameraViewMode global = ClientConfig.CAMERA_GLOBAL_VIEW_MODE.get();
+            CameraViewMode airplane = ClientConfig.CAMERA_AIRPLANE_VIEW_MODE.get().resolve(global);
+            CameraViewMode helicopter = ClientConfig.CAMERA_HELICOPTER_VIEW_MODE.get().resolve(global);
+            Component hint = switch (viewTab) {
+                case MODE -> Component.translatable("screen.sbwcontrol.view_status",
+                        viewModeName(airplane), viewModeName(helicopter));
+                case DYNAMIC -> Component.translatable("screen.sbwcontrol.dynamic_hint");
+                case DISTANCE -> Component.translatable("screen.sbwcontrol.distance_status",
+                        distanceModeName(ClientConfig.CAMERA_DISTANCE_MODE.get()),
+                        String.format("%.1f", CameraDistanceController.getLastBaseDistance()),
+                        String.format("%.1f", CameraDistanceController.getLastEffectiveDistance()));
+            };
+            graphics.drawCenteredString(font, hint, width / 2, height - 44, 0xA0A0A0);
+        } else if (tab == Tab.OPERATION) {
+            graphics.drawCenteredString(font, Component.translatable("screen.sbwcontrol.input_hint"),
                     width / 2, height - 44, 0xA0A0A0);
         } else if (tab == Tab.DIAGNOSTICS) {
             graphics.drawCenteredString(font, Component.translatable("screen.sbwcontrol.telemetry_hint"),

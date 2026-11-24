@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.sakasiyhaha.sbwcontrol.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "sbwcontrol.refmap.json",
+  "mixins": [
+    "VehicleShootVecMixin"
+  ],
+  "client": [],
+  "server": []
+}

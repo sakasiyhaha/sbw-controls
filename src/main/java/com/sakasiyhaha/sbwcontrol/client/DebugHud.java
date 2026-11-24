@@ -65,6 +65,19 @@ public final class DebugHud {
                 CameraHandler.getOffsetYaw(),
                 CameraHandler.getOffsetPitch(),
                 CameraHandler.getExtraDistance()));
+        lines.add(String.format("phase=%s edge=%.2f spd=%.2f",
+                CameraHandler.getOffsetPhase(),
+                CameraHandler.getEdgeBrakeState(),
+                CameraHandler.getEdgeSpeedScale()));
+        lines.add(String.format("sticky on=%s heli=%s coupling=%.2f orbit=%.1f",
+                CameraHandler.isRollFollowEnabled(),
+                CameraHandler.isLastHelicopter(),
+                CameraHandler.getRollCoupling(),
+                CameraHandler.getLastOrbitRoll()));
+        lines.add(String.format("roll ctl=%.2f event=%.1f stock=%.1f",
+                ClientControlHandler.getRoll(),
+                CameraHandler.getLastCamRoll(),
+                CameraHandler.getLastStockRoll()));
 
         int x = 4;
         int y = 4;

@@ -71,9 +71,8 @@ public final class ServerCommands {
         source.sendSuccess(() -> Component.literal("[sbwcontrol] allowed mask=0b"
                 + Integer.toBinaryString(ServerControlHandler.allowedMask())
                 + " schemes=" + java.util.Arrays.toString(ControlScheme.values())
-                + " scales(yaw/roll/pitch)=" + ServerConfig.YAW_SCALE.get() + "/"
-                + ServerConfig.ROLL_SCALE.get() + "/" + ServerConfig.PITCH_SCALE.get()
-                + " extraYawRate=" + ServerConfig.EXTRA_YAW_RATE.get() + " deg/s"
+                + " pitchScale=" + ServerConfig.PITCH_SCALE.get()
+                + " maxYawRate=" + ServerConfig.MAX_YAW_RATE.get() + " deg/s"
                 + " timeout=" + ServerConfig.INPUT_TIMEOUT_TICKS.get()
                 + " activeInputs=" + ServerControlHandler.inputCount()), false);
         return 1;
@@ -98,14 +97,10 @@ public final class ServerCommands {
     }
 
     private static int setScale(CommandSourceStack source, String axis, double value) {
-        switch (axis.toLowerCase(Locale.ROOT)) {
-            case "yaw" -> ServerConfig.YAW_SCALE.set(value);
-            case "roll" -> ServerConfig.ROLL_SCALE.set(value);
-            case "pitch" -> ServerConfig.PITCH_SCALE.set(value);
-            default -> {
-                return 0;
-            }
+        if (!"pitch".equalsIgnoreCase(axis)) {
+            return 0;
         }
+        ServerConfig.PITCH_SCALE.set(value);
         ServerConfig.SPEC.save();
         source.sendSuccess(() -> Component.literal("[sbwcontrol] " + axis + "_scale=" + value + " (saved)"), true);
         return 1;
@@ -119,9 +114,9 @@ public final class ServerCommands {
     }
 
     private static int setExtraYawRate(CommandSourceStack source, double degPerSec) {
-        ServerConfig.EXTRA_YAW_RATE.set(degPerSec);
+        ServerConfig.MAX_YAW_RATE.set(degPerSec);
         ServerConfig.SPEC.save();
-        source.sendSuccess(() -> Component.literal("[sbwcontrol] extra_yaw_rate=" + degPerSec + " deg/s (saved)"), true);
+        source.sendSuccess(() -> Component.literal("[sbwcontrol] max_yaw_rate=" + degPerSec + " deg/s (saved)"), true);
         return 1;
     }
 

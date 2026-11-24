@@ -9,10 +9,10 @@ import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
-/** 本附属的网络通道（独立于卓越前线自己的通道，协议版本 1）。 */
+/** 本附属的网络通道（独立于卓越前线自己的通道，协议版本 3）。 */
 public final class ControlNetwork {
 
-    private static final String PROTOCOL = "1";
+    private static final String PROTOCOL = "3";
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(SbwControl.MODID, "main"),
             () -> PROTOCOL, PROTOCOL::equals, PROTOCOL::equals);

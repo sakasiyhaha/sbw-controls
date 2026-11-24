@@ -19,17 +19,14 @@ public final class ServerConfig {
     public static final ForgeConfigSpec.BooleanValue APPLY_AIRPLANE;
     public static final ForgeConfigSpec.BooleanValue APPLY_HELICOPTER;
 
-    /** 偏航通道 → 卓越前线 mouseMoveSpeedX 的缩放（服务端调，客户端不用管）。 */
-    public static final ForgeConfigSpec.DoubleValue YAW_SCALE;
-    /** 滚转通道 → deltaRot 的缩放。 */
-    public static final ForgeConfigSpec.DoubleValue ROLL_SCALE;
     /** 俯仰通道 → mouseMoveSpeedY 的缩放。 */
     public static final ForgeConfigSpec.DoubleValue PITCH_SCALE;
     /**
-     * 偏航键附加的直接偏航角速度（度/秒）。
-     * 卓越前线引擎里鼠标 X 的偏航项被 rotSpeed 钳制（平飞时约 0.3°/tick ≈ 6°/s），
-     * A/D 偏航会显得几乎没反应；这里额外直接改 yRot，保证 A/D 有明确的偏航效果。
+     * 服务端允许的最大偏航角速度（度/秒）。
+     * 直升机走原版 mouseMoveSpeedX 公式反算，固定翼走直接 yRot。
      */
+    public static final ForgeConfigSpec.DoubleValue MAX_YAW_RATE;
+    /** 兼容旧代码/自测的别名，实际读取同一个 MAX_YAW_RATE。 */
     public static final ForgeConfigSpec.DoubleValue EXTRA_YAW_RATE;
 
     /** 超过多少 tick 没收到控制包就不再应用，回退原版。 */
@@ -53,17 +50,11 @@ public final class ServerConfig {
         b.pop();
 
         b.comment("Server-side input scaling (tune when flight feel is too weak/strong)").push("scaling");
-        // 默认值按卓越前线 aircraftEngine/helicopterEngine 的公式估算（所有载具的 Pitch/Yaw/RollSpeed 基本为 1，
-        // 即通道 1.0 ≈ 每 tick 1 度左右的角速度），目标是：俯仰满杆约 40°/s、滚转满杆约 120°/s、偏航按键约 10~60°/s
-        // （偏航受引擎 rotSpeed 钳制，实际随滚转角度变化）。实机试飞后可直接在 serverconfig 里改。
-        YAW_SCALE = b.comment("yaw channel -> mouseMoveSpeedX (engine clamps by rotSpeed; larger may not help at level flight)")
-                .defineInRange("yaw_scale", 4.0, 0.1, 64.0);
-        ROLL_SCALE = b.comment("roll channel -> deltaRot (roll rate = rollSpeed * deltaRot, rollSpeed≈1)")
-                .defineInRange("roll_scale", 6.0, 0.01, 20.0);
         PITCH_SCALE = b.comment("pitch channel -> mouseMoveSpeedY (pitch rate = pitchSpeed * clamp(0.1~0.2 * value))")
                 .defineInRange("pitch_scale", 20.0, 0.1, 64.0);
-        EXTRA_YAW_RATE = b.comment("extra direct yaw rate for A/D keys in deg/s (engine yaw via mouseMoveSpeedX is clamped to ~6 deg/s in level flight)")
-                .defineInRange("extra_yaw_rate", 30.0, 0.0, 180.0);
+        MAX_YAW_RATE = b.comment("Maximum yaw rate in deg/s; the client only controls its sensitivity ratio within this cap")
+                .defineInRange("max_yaw_rate", 90.0, 0.0, 180.0);
+        EXTRA_YAW_RATE = MAX_YAW_RATE;
         b.pop();
 
         INPUT_TIMEOUT_TICKS = b.comment("Drop control input after this many ticks without a packet")
