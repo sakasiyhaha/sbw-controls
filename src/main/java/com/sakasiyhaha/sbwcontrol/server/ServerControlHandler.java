@@ -48,8 +48,6 @@ public final class ServerControlHandler {
     private static final Map<Integer, Vec3> CENTER_AIM_DIRS = new ConcurrentHashMap<>();
     /** GameTest 用：没有真实玩家输入时也允许中心瞄准方向生效。 */
     private static volatile boolean CENTER_AIM_TEST_MODE = false;
-    /** 滚转弹性按键的脉宽调制相位（每个载具一份）。 */
-    private static final Map<Integer, Integer> ROLL_PULSE = new ConcurrentHashMap<>();
     private static int logCounter = 0;
     private static Boolean apiAvailable = null;
     private static double lastAnnouncedMaxYawRate = Double.NaN;
@@ -107,7 +105,6 @@ public final class ServerControlHandler {
             INPUTS.remove(player.getUUID());
             if (player.getVehicle() instanceof VehicleEntity vehicle) {
                 CENTER_AIM_DIRS.remove(vehicle.getId());
-                ROLL_PULSE.remove(vehicle.getId());
             }
             return;
         }
@@ -328,11 +325,9 @@ public final class ServerControlHandler {
      *   SW 引擎 yRot += yawSpeed * clamp(2 * mouseX * synchedPropellerRot, -10, 10)
      *   ⇒ mouseX = yaw * max_yaw_rate / (40 * synchedPropellerRot)
      * - 固定翼 A/D 偏航 → 沿用直接 yRot 公式（固定翼引擎没有同形式的 mouse X 偏航项）。
-     * - 鼠标左右滚转 → leftInputDown/rightInputDown 弹性按键（原版 A/D 滚转通道）。
+     * - 鼠标左右滚转 → 直接写 deltaRot（旧版手感：模拟量无级、无按键 ramp）。
      * - 俯仰 → mouseMoveSpeedY。
      * 炮弹方向由 getShootVec Mixin 固定到客户端当帧瞄准方向。
-     *
-     * <p>滚转模拟：按 |roll| 比例做 6 tick 脉宽调制，近似模拟鼠标的模拟量。
      */
     public static void applyToVehicle(VehicleEntity vehicle, RemoteInput input) {
         double pitchScale = ServerConfig.PITCH_SCALE.get();
@@ -344,7 +339,11 @@ public final class ServerControlHandler {
             vehicle.setYRot(vehicle.getYRot() + (float) (input.yaw * maxYawRate * 0.05D));
         }
         vehicle.mouseInput(mouseYaw, input.pitch * pitchScale);
-        applyRollKeyPulse(vehicle, input.roll);
+        // 负号：SW 的 deltaRot 正方向是向左滚转。
+        vehicle.setDeltaRot((float) (-input.roll * ServerConfig.ROLL_SCALE.get()));
+        // 清理 A/D 输入位，避免引擎再把按键解释成一次额外滚转。
+        vehicle.setLeftInputDown(false);
+        vehicle.setRightInputDown(false);
     }
 
     /**
@@ -361,15 +360,6 @@ public final class ServerControlHandler {
         return yaw * (maxYawRate / 40.0D) / propeller;
     }
 
-    /** 鼠标滚转 → 原版 A/D 键，6 tick 脉宽调制近似模拟模拟量。 */
-    private static void applyRollKeyPulse(VehicleEntity vehicle, float roll) {
-        int phase = ROLL_PULSE.getOrDefault(vehicle.getId(), 0);
-        ROLL_PULSE.put(vehicle.getId(), (phase + 1) % 6);
-        int duty = (int) Math.round(Math.abs(roll) * 6.0D);
-        vehicle.setRightInputDown(roll > 1.0E-4F && phase < duty);
-        vehicle.setLeftInputDown(roll < -1.0E-4F && phase < duty);
-    }
-
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player && !player.level().isClientSide) {
@@ -383,7 +373,6 @@ public final class ServerControlHandler {
             INPUTS.remove(player.getUUID());
             if (player.getVehicle() instanceof VehicleEntity vehicle) {
                 CENTER_AIM_DIRS.remove(vehicle.getId());
-                ROLL_PULSE.remove(vehicle.getId());
             }
         }
     }
@@ -391,7 +380,6 @@ public final class ServerControlHandler {
     public static void reset() {
         INPUTS.clear();
         CENTER_AIM_DIRS.clear();
-        ROLL_PULSE.clear();
         lastAnnouncedMaxYawRate = Double.NaN;
     }
 

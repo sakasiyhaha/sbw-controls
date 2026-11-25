@@ -230,5 +230,9 @@
   "screen.sbwcontrol.fixedwingbackend.INDEPENDENT": "独立机位",
   "screen.sbwcontrol.fixedwingbackend.SW_OVERRIDE": "覆盖原机位",
   "screen.sbwcontrol.fixed_wing_distance": "固定翼独立距离",
-  "screen.sbwcontrol.fixed_wing_height": "固定翼独立高度"
+  "screen.sbwcontrol.fixed_wing_height": "固定翼独立高度",
+  "screen.sbwcontrol.roll_smoothing": "滚转平滑(秒)",
+  "screen.sbwcontrol.tooltip.roll_smoothing": "滚转通道独立低通时间；越小明滚转越跟手，不与偏航平滑共用。",
+  "screen.sbwcontrol.roll_scale": "滚转速率增益",
+  "screen.sbwcontrol.tooltip.roll_scale": "鼠标滚转写入 deltaRot 的倍率；越大滚转越快越脆。"
 }

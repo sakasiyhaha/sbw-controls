@@ -21,6 +21,8 @@ public final class ServerConfig {
 
     /** 俯仰通道 → mouseMoveSpeedY 的缩放。 */
     public static final ForgeConfigSpec.DoubleValue PITCH_SCALE;
+    /** 滚转通道 → deltaRot 的缩放（1.0 ≈ 每 tick 1 度滚转率）。 */
+    public static final ForgeConfigSpec.DoubleValue ROLL_SCALE;
     /**
      * 服务端允许的最大偏航角速度（度/秒）。
      * 直升机走原版 mouseMoveSpeedX 公式反算，固定翼走直接 yRot。
@@ -52,6 +54,8 @@ public final class ServerConfig {
         b.comment("Server-side input scaling (tune when flight feel is too weak/strong)").push("scaling");
         PITCH_SCALE = b.comment("pitch channel -> mouseMoveSpeedY (pitch rate = pitchSpeed * clamp(0.1~0.2 * value))")
                 .defineInRange("pitch_scale", 20.0, 0.1, 64.0);
+        ROLL_SCALE = b.comment("mouse roll -> deltaRot (higher = faster/crisper roll)")
+                .defineInRange("roll_scale", 6.0, 0.1, 20.0);
         MAX_YAW_RATE = b.comment("Maximum yaw rate in deg/s; the client only controls its sensitivity ratio within this cap")
                 .defineInRange("max_yaw_rate", 90.0, 0.0, 180.0);
         EXTRA_YAW_RATE = MAX_YAW_RATE;

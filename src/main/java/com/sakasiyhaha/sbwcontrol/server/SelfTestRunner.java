@@ -110,9 +110,14 @@ public final class SelfTestRunner {
         if (Math.abs(vehicle.getMouseMoveSpeedY() - expectPitch) > eps) {
             throw new IllegalStateException("pitch channel mismatch: got " + vehicle.getMouseMoveSpeedY() + " expected " + expectPitch);
         }
-        if (!vehicle.rightInputDown() || vehicle.leftInputDown()) {
-            throw new IllegalStateException("roll key simulation mismatch: right=" + vehicle.rightInputDown()
+        if (vehicle.rightInputDown() || vehicle.leftInputDown()) {
+            throw new IllegalStateException("roll A/D keys must be cleared: right=" + vehicle.rightInputDown()
                     + " left=" + vehicle.leftInputDown());
+        }
+        double expectDeltaRot = -roll * ServerConfig.ROLL_SCALE.get();
+        if (Math.abs(vehicle.getDeltaRot() - expectDeltaRot) > eps) {
+            throw new IllegalStateException("roll deltaRot mismatch: got " + vehicle.getDeltaRot()
+                    + " expected " + expectDeltaRot);
         }
         double expectExtraYaw = yaw * ServerConfig.MAX_YAW_RATE.get() * 0.05D;
         double actualExtraYaw = net.minecraft.util.Mth.wrapDegrees(vehicle.getYRot());

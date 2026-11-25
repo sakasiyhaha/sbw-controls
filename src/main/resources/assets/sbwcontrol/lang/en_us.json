@@ -230,5 +230,9 @@
   "screen.sbwcontrol.fixedwingbackend.INDEPENDENT": "Independent",
   "screen.sbwcontrol.fixedwingbackend.SW_OVERRIDE": "SW override",
   "screen.sbwcontrol.fixed_wing_distance": "Fixed-wing distance",
-  "screen.sbwcontrol.fixed_wing_height": "Fixed-wing height"
+  "screen.sbwcontrol.fixed_wing_height": "Fixed-wing height",
+  "screen.sbwcontrol.roll_smoothing": "Roll smoothing (s)",
+  "screen.sbwcontrol.tooltip.roll_smoothing": "Independent low-pass for roll; smaller = crisper roll, decoupled from yaw smoothing.",
+  "screen.sbwcontrol.roll_scale": "Roll rate scale",
+  "screen.sbwcontrol.tooltip.roll_scale": "Mouse roll -> deltaRot multiplier; larger = faster/crisper roll."
 }

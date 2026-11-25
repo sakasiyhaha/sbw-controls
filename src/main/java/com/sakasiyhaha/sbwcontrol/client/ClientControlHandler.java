@@ -194,8 +194,9 @@ public final class ClientControlHandler {
         rawInputActive = Math.abs(rawPitch) + Math.abs(rawRoll) + Math.abs(rawYaw) > 1.0E-4F;
 
         float alpha = smoothingAlpha();
+        float rollAlpha = rollSmoothingAlpha();
         pitch += (rawPitch - pitch) * alpha;
-        roll += (rawRoll - roll) * alpha;
+        roll += (rawRoll - roll) * rollAlpha;
         yaw += (rawYaw - yaw) * alpha;
         // 客户端只决定使用服务端最大偏航速度的比例。
         controlYaw = (float) Mth.clamp((double) yaw * ClientConfig.YAW_SENSITIVITY.get(), -1.0D, 1.0D);
@@ -271,7 +272,15 @@ public final class ClientControlHandler {
     }
 
     private static float smoothingAlpha() {
-        double smoothing = ClientConfig.SMOOTHING.get();
+        return smoothingAlpha(ClientConfig.SMOOTHING.get());
+    }
+
+    /** 滚转独立平滑：默认比偏航更快，避免滚转跟着偏航的平滑一起变迟钝。 */
+    private static float rollSmoothingAlpha() {
+        return smoothingAlpha(ClientConfig.ROLL_SMOOTHING.get());
+    }
+
+    private static float smoothingAlpha(double smoothing) {
         if (smoothing <= 1.0E-4D) {
             return 1.0F;
         }

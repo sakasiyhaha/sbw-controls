@@ -393,6 +393,8 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
                 ClientConfig.STICK_CENTER_TIME::set, sec()));
         addRenderableWidget(slider(right, row + step * 4, w, "screen.sbwcontrol.stick_gain",
                 0.1, 5.0, ClientConfig.STICK_GAIN.get(), ClientConfig.STICK_GAIN::set, num()));
+        addRenderableWidget(slider(right, row + step * 5, w, "screen.sbwcontrol.roll_smoothing",
+                0.0, 0.3, ClientConfig.ROLL_SMOOTHING.get(), ClientConfig.ROLL_SMOOTHING::set, sec()));
     }
 
     private void buildServer(int cx, int row) {
@@ -414,7 +416,9 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
                 ServerConfig.MAX_YAW_RATE::set, value -> String.format("%.0f°/s", value)));
         addRenderableWidget(slider(left, row + step, w, "screen.sbwcontrol.pitch_scale",
                 0.1, 64.0, ServerConfig.PITCH_SCALE.get(), ServerConfig.PITCH_SCALE::set, num()));
-        addRenderableWidget(slider(left, row + step * 2, w, "screen.sbwcontrol.input_timeout",
+        addRenderableWidget(slider(left, row + step * 2, w, "screen.sbwcontrol.roll_scale",
+                0.1, 20.0, ServerConfig.ROLL_SCALE.get(), ServerConfig.ROLL_SCALE::set, num()));
+        addRenderableWidget(slider(left, row + step * 3, w, "screen.sbwcontrol.input_timeout",
                 1, 100, ServerConfig.INPUT_TIMEOUT_TICKS.get(),
                 value -> ServerConfig.INPUT_TIMEOUT_TICKS.set((int) Math.round(value)),
                 value -> String.format("%.0f", value)));
@@ -505,6 +509,7 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
                 ClientConfig.STICK_GAIN.set(1.0D);
                 ClientConfig.MOUSE_SENSITIVITY.set(100);
                 ClientConfig.SMOOTHING.set(0.04D);
+        ClientConfig.ROLL_SMOOTHING.set(0.02D);
                 ClientConfig.DEADZONE.set(0.02D);
                 ClientConfig.PITCH_GAIN.set(1.0D);
                 ClientConfig.ROLL_GAIN.set(1.0D);
@@ -519,6 +524,7 @@ public final class SbwConfigScreen extends AbstractSbwScreen {
                 }
                 ServerConfig.MAX_YAW_RATE.set(90.0D);
                 ServerConfig.PITCH_SCALE.set(20.0D);
+                ServerConfig.ROLL_SCALE.set(6.0D);
                 ServerConfig.INPUT_TIMEOUT_TICKS.set(5);
                 ServerConfig.ALLOW_ROLL_BIRD.set(true);
                 ServerConfig.ALLOW_ROLL_YAW_HYBRID.set(true);

@@ -32,14 +32,20 @@ This keeps the previous `max_yaw_rate` / smoothing / sensitivity feel while keep
 
 ### Mouse roll
 
-Mouse roll is converted into native A/D key presses with 6-tick pulse-width modulation:
+Mouse roll is a direct analog `deltaRot` input:
 
 ```text
-rightInputDown for roll > 0
-leftInputDown for roll < 0
+deltaRot = -roll * roll_scale
 ```
 
-The engine's own `deltaRot` path handles roll.
+Roll smoothing is independent from yaw:
+
+```toml
+roll_smoothing = 0.02
+roll_scale = 6.0
+```
+
+This keeps roll crisp and decoupled from the yaw feel formula. An earlier 6-tick pulse-key approach was removed because SW's key path ramps `deltaRot` through `holdTick`, which made roll feel heavy and delayed.
 
 ### Projectile direction
 
@@ -74,9 +80,10 @@ The result: during A/D circular motion, shells/rockets leave along the client-fr
 
 - View-mode page: fixed-wing backend, independent distance and height.
 - Distance page: EXTRA/TOTAL, airplane/helicopter distances, collision and smoothing.
-- Server page: `max_yaw_rate`, `pitch_scale`, input timeout, allowed schemes, vehicle types, debug log.
-- Removed obsolete `yaw_scale`, `roll_scale`, `separate_yaw` from config, UI, commands and locale.
-- Refactored `ServerControlHandler.applyToVehicle()` into `helicopterMouseYaw()` and `applyRollKeyPulse()`.
+- Input feel page: yaw smoothing, independent roll smoothing, gains and deadzone.
+- Server page: `max_yaw_rate`, `pitch_scale`, `roll_scale`, input timeout, allowed schemes, vehicle types, debug log.
+- Removed obsolete `yaw_scale` and `separate_yaw` from config, UI, commands and locale; `roll_scale` is kept for roll feel.
+- Refactored `ServerControlHandler.applyToVehicle()` into `helicopterMouseYaw()` and direct roll application.
 
 ## Network / compatibility
 

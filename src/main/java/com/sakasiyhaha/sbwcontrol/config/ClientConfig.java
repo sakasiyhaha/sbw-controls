@@ -52,6 +52,8 @@ public final class ClientConfig {
     public static final ForgeConfigSpec.IntValue MOUSE_SENSITIVITY;
     /** 输入平滑秒数（0 = 不平滑）。 */
     public static final ForgeConfigSpec.DoubleValue SMOOTHING;
+    /** 滚转通道独立平滑秒数（默认更短，避免和偏航共用平滑导致滚转迟钝）。 */
+    public static final ForgeConfigSpec.DoubleValue ROLL_SMOOTHING;
     /** 死区（0~0.5）。 */
     public static final ForgeConfigSpec.DoubleValue DEADZONE;
 
@@ -271,6 +273,8 @@ public final class ClientConfig {
                 .defineInRange("mouse_sensitivity", 100, 10, 300);
         SMOOTHING = b.comment("Smoothing time in seconds (0 = raw input)")
                 .defineInRange("smoothing", 0.04, 0.0, 1.0);
+        ROLL_SMOOTHING = b.comment("Roll-only smoothing time in seconds; shorter = crisper roll")
+                .defineInRange("roll_smoothing", 0.02, 0.0, 1.0);
         DEADZONE = b.comment("Input deadzone (0~0.5)")
                 .defineInRange("deadzone", 0.02, 0.0, 0.5);
         b.pop();

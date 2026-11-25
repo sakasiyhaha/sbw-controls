@@ -7,7 +7,7 @@
 - 修复 A/D 偏航时普通炮弹/火箭弹偏向旋转切线的问题。
   - 直升机 A/D 偏航改用原版 `mouseMoveSpeedX`，并按旧公式反算：
     `mouseX = yaw * max_yaw_rate / (40 * syncedPropellerRot)`。
-  - 鼠标滚转改为原版 A/D 弹性按键模拟（6 tick 脉宽调制）。
+  - 鼠标滚转最初改为原版 A/D 弹性按键模拟，后因手感迟钝在同版本热修中恢复为无级 `deltaRot`。
   - 新增 `VehicleEntity.getShootVec` Mixin：服务端实际开火方向覆盖为客户端当帧瞄准方向，机炮/火箭弹/炮塔全部生效。
   - 炮塔 yaw 补偿符号修正为 `bodyYaw - aimYaw`，并按真实炮塔包线 clamp。
   - RollBird 中心瞄准现在在第一人称、FOLLOW、DYNAMIC 全部相机模式下生效。
@@ -31,13 +31,19 @@
 - 鼠标滚转灵敏度调整：`roll_gain` 默认/活动值降低，减少“鼠标一动就大坡度”。
 - `smoothing` 默认更快；`stick_center_time` 默认更短，松杆回中更快。
 - RollBird 的 A/D 偏航继续沿用 `max_yaw_rate`、客户端 smoothing/sensitivity 参数函数。
+- **滚转手感热修（同版本 1.2.0 覆盖）**：
+  - 移除 6 tick 脉冲按键，恢复无级 `setDeltaRot(-roll * roll_scale)`；
+  - 新增独立 `roll_smoothing`（默认 `0.02s`），不再与偏航共用 `smoothing`；
+  - 新增 `roll_scale`（默认 `6.0`）及服务端 UI 滑条；
+  - 解决滚转“大惯性、迟钝、跟不上鼠标”的问题。
 
 ### 配置 / UI
 
 - 视角模式页新增固定翼相机后端、独立距离、独立高度。
 - 相机距离页继续提供 EXTRA / TOTAL、固定翼/直升机距离、碰撞和距离平滑。
-- 服务端页面保留 `max_yaw_rate`、`pitch_scale`、输入超时、允许方案、载具类型、日志。
-- 清理废弃配置：`yaw_scale`、`roll_scale`、`separate_yaw` 及其 UI/命令/语言键。
+- 服务端页面：`max_yaw_rate`、`pitch_scale`、`roll_scale`、输入超时、允许方案、载具类型、日志。
+- 输入手感页：`smoothing`、独立 `roll_smoothing`、增益、死区等。
+- 清理废弃配置：`yaw_scale`、`separate_yaw` 及其 UI/命令/语言键（`roll_scale` 在滚转热修中恢复）。
 - 清理重复注释和不再使用的测试辅助函数。
 
 ### 网络 / 兼容

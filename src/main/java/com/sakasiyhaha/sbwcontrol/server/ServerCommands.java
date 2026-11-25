@@ -72,6 +72,7 @@ public final class ServerCommands {
                 + Integer.toBinaryString(ServerControlHandler.allowedMask())
                 + " schemes=" + java.util.Arrays.toString(ControlScheme.values())
                 + " pitchScale=" + ServerConfig.PITCH_SCALE.get()
+                + " rollScale=" + ServerConfig.ROLL_SCALE.get()
                 + " maxYawRate=" + ServerConfig.MAX_YAW_RATE.get() + " deg/s"
                 + " timeout=" + ServerConfig.INPUT_TIMEOUT_TICKS.get()
                 + " activeInputs=" + ServerControlHandler.inputCount()), false);
@@ -97,10 +98,13 @@ public final class ServerCommands {
     }
 
     private static int setScale(CommandSourceStack source, String axis, double value) {
-        if (!"pitch".equalsIgnoreCase(axis)) {
+        if ("pitch".equalsIgnoreCase(axis)) {
+            ServerConfig.PITCH_SCALE.set(value);
+        } else if ("roll".equalsIgnoreCase(axis)) {
+            ServerConfig.ROLL_SCALE.set(value);
+        } else {
             return 0;
         }
-        ServerConfig.PITCH_SCALE.set(value);
         ServerConfig.SPEC.save();
         source.sendSuccess(() -> Component.literal("[sbwcontrol] " + axis + "_scale=" + value + " (saved)"), true);
         return 1;

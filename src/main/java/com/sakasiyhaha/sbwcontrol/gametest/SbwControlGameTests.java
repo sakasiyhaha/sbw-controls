@@ -59,9 +59,14 @@ public final class SbwControlGameTests {
                 helper.fail("pitch channel mismatch: " + vehicle.getMouseMoveSpeedY() + " != " + expectPitch);
                 return;
             }
-            if (!vehicle.rightInputDown() || vehicle.leftInputDown()) {
-                helper.fail("roll key simulation mismatch: right=" + vehicle.rightInputDown()
+            if (vehicle.rightInputDown() || vehicle.leftInputDown()) {
+                helper.fail("roll A/D keys must be cleared: right=" + vehicle.rightInputDown()
                         + " left=" + vehicle.leftInputDown());
+                return;
+            }
+            double expectedDeltaRot = -roll * ServerConfig.ROLL_SCALE.get();
+            if (Math.abs(vehicle.getDeltaRot() - expectedDeltaRot) > eps) {
+                helper.fail("roll deltaRot mismatch: " + vehicle.getDeltaRot() + " != " + expectedDeltaRot);
                 return;
             }
             double expectedExtraYaw = yaw * ServerConfig.MAX_YAW_RATE.get() * 0.05D;
